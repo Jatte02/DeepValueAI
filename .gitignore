@@ -1,0 +1,66 @@
+# ============================================================
+# Python
+# ============================================================
+# Bytecode compilado — Python genera estos automáticamente
+# cuando ejecutas tu código. 
+__pycache__/
+*.pyc
+*.pyo
+
+# Packaging 
+*.egg-info/
+dist/
+build/
+
+# ============================================================
+# Entornos virtuales
+# ============================================================
+# Tu entorno virtual contiene TODAS las librerías instaladas
+# (pandas, streamlit, xgboost...). Puede pesar 500MB+.
+# No se sube — cada persona lo recrea con: pip install -e ".[dev]"
+.venv/
+venv/
+env/
+
+# ============================================================
+# Datos generados
+# ============================================================
+# El dataset de entrenamiento se regenera con: make dataset
+# Puede pesar cientos de MB. No pertenece en Git.
+data/dataset_diario.csv
+
+# ============================================================
+# Variables de entorno
+# ============================================================
+# Aquí irían API keys, contraseñas, configuración sensible.
+# NUNCA se sube a Git. Solo se sube .env.example como plantilla.
+.env
+
+# ============================================================
+# IDE y editores
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============================================================
+# Sistema operativo
+# ============================================================
+# macOS crea .DS_Store en cada carpeta que abres en Finder.
+# Windows crea Thumbs.db para thumbnails.
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Jupyter
+# ============================================================
+.ipynb_checkpoints/
+
+# ============================================================
+# Testing y linting cache
+# ============================================================
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage

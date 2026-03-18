@@ -1,0 +1,64 @@
+[project]
+name = "deepvalue-ai"
+version = "2.0.0"
+description = "Intelligent asset selection system combining fundamental analysis with ML"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Giancarlos Estévez"}]
+readme = "README.md"
+
+# ---------------------------------------------------------------
+# Dependencias de PRODUCCIÓN
+# Estas son las librerías que la aplicación necesita para correr.
+# Solo listamos las que importamos directamente en nuestro código.
+# pip resuelve las sub-dependencias automáticamente.
+# ---------------------------------------------------------------
+dependencies = [
+    "streamlit>=1.30",          # Dashboard web interactivo
+    "pandas>=2.0",              # Manipulación de datos tabulares
+    "numpy>=1.24",              # Operaciones numéricas
+    "yfinance>=0.2.30",         # API de Yahoo Finance
+    "pandas-ta>=0.3.14b1",      # Indicadores técnicos (SMA, Williams %R)
+    "scikit-learn>=1.3",        # Framework ML: interfaz estándar para todos los modelos
+    "matplotlib>=3.7",          # Gráficos estáticos
+    "seaborn>=0.13",            # Gráficos estadísticos (confusion matrix)
+    "joblib>=1.3",              # Serialización de modelos (.pkl)
+    "beautifulsoup4>=4.12",     # Parsing HTML (lista S&P 500)
+    "requests>=2.31",           # HTTP requests
+    "lxml>=4.9",                # Parser XML para pandas.read_html
+]
+
+# ---------------------------------------------------------------
+# Dependencias de DESARROLLO
+# Solo se instalan si haces: pip install -e ".[dev]"
+# No se necesitan en producción.
+# ---------------------------------------------------------------
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",              # Testing framework
+    "ruff>=0.4",                # Linter + formateador (reemplaza flake8 + black)
+]
+
+# ---------------------------------------------------------------
+# Configuración de Ruff (linter)
+# ---------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"        # Asume Python 3.10+
+line-length = 100               # Máximo 100 caracteres por línea
+
+[tool.ruff.lint]
+select = [
+    "E",    # Errores de estilo (pycodestyle)
+    "F",    # Errores lógicos (pyflakes)
+    "I",    # Orden de imports (isort)
+    "UP",   # Modernización de sintaxis (pyupgrade)
+    "B",    # Bugs comunes (flake8-bugbear)
+    "SIM",  # Simplificaciones (flake8-simplify)
+]
+
+# ---------------------------------------------------------------
+# Configuración de Pytest
+# ---------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]           # Dónde buscar tests
+pythonpath = ["."]              # Para que los imports funcionen desde la raíz
