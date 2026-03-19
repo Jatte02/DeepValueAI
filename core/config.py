@@ -86,8 +86,26 @@ FEATURE_COLUMNS = TECHNICAL_FEATURES + FUNDAMENTAL_FEATURES
 
 DEFAULT_THRESHOLD = 0.50          # Fallback if no threshold file exists yet
 SMA_BUY_CEILING = 1.05           # Price must be < SMA_200 × this to buy
-BACKTEST_BUY_AMOUNT = 5_000      # Fixed dollar amount per buy
-BACKTEST_COOLDOWN_DAYS = 22      # ~1 month between consecutive buys
+
+
+# ---------------------------------------------------------------------------
+# Portfolio management
+# ---------------------------------------------------------------------------
+# These controls prevent over-concentration and enforce diversification.
+# Without them, the system could dump all capital into one stock that
+# keeps triggering buy signals at similar prices.
+#
+# Example with $100,000 portfolio:
+#   - Each buy: 5% of portfolio = $5,000
+#   - Max per ticker: 10% = $10,000 (so max 2 buys of same stock)
+#   - Max open positions: 15 different stocks
+#   - Cooldown: 22 trading days before buying MORE of the SAME stock
+#     (buying a DIFFERENT stock has no cooldown)
+
+POSITION_SIZE_PCT = 0.05          # Each buy = 5% of current portfolio value
+MAX_TICKER_EXPOSURE_PCT = 0.10    # Max 10% of portfolio in a single stock
+MAX_OPEN_POSITIONS = 15           # Max 15 different stocks at once
+COOLDOWN_DAYS_PER_TICKER = 22     # Wait ~1 month before buying same stock again
 
 
 # ---------------------------------------------------------------------------
