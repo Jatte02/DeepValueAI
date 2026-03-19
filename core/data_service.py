@@ -40,6 +40,7 @@ from .config import (
     SMA_LENGTH,
     SP500_MARKET_TICKER,
     SP500_WIKI_URL,
+    TECHNICAL_FEATURES,
     VOLUME_SMA_LENGTH,
     WILLIAMS_R_LENGTH,
 )
@@ -386,5 +387,232 @@ def compute_technical_features(
         df["market_trend"] = market_trend_series.reindex(df.index, method="ffill")
     else:
         df["market_trend"] = np.nan
+
+    return df
+
+# ---------------------------------------------------------------------------
+# Fundamental feature extraction
+# ---------------------------------------------------------------------------
+
+def get_fundamental_features(ticker: str) -> dict[str, float]:
+    """Extract 8 fundamental features from Yahoo Finance for a single ticker.
+
+    Uses the ``yf.Ticker().info`` dictionary, which contains the most
+    recent snapshot of company financials (not historical — just the
+    latest reported values).
+
+    Parameters
+    ----------
+    ticker : str
+        Ticker symbol (e.g., ``"AAPL"``).
+
+    Returns
+    -------
+    dict[str, float]
+        Mapping of feature name → value for all 8 fundamental features.
+        Missing values are returned as ``np.nan`` (never raises on
+        missing data — the model handles NaN via imputation).
+
+    Examples
+    --------
+    >>> feats = get_fundamental_features("AAPL")
+    >>> "pe_ratio" in feats
+    True
+    """
+    logger.debug("Fetching fundamentals for %s...", ticker)
+
+    # ------------------------------------------------------------------
+    # yf.Ticker().info returns a dict with 100+ keys. Not all keys
+    # exist for every company (e.g., banks don't report "operatingMargins"
+    # the same way tech companies do). Using .get(key, None) ensures
+    # we never crash on a missing key — we just get None.
+    # ------------------------------------------------------------------
+    try:
+        info = yf.Ticker(ticker).info
+    except Exception as exc:
+        logger.warning("Could not fetch fundamentals for %s: %s", ticker, exc)
+        return {feat: np.nan for feat in FUNDAMENTAL_FEATURES}
+
+    # ------------------------------------------------------------------
+    # Helper: safely extract a numeric value from the info dict.
+    # Yahoo sometimes returns strings, None, or 0 where we expect
+    # a float. This function handles all those cases in one place
+    # instead of repeating try/except for each feature.
+    # ------------------------------------------------------------------
+    def safe_get(key: str) -> float:
+        """Return a float from info[key], or np.nan if anything goes wrong."""
+        val = info.get(key)
+        if val is None:
+            return np.nan
+        try:
+            val = float(val)
+            # Discard infinities — they break model training.
+            return val if np.isfinite(val) else np.nan
+        except (ValueError, TypeError):
+            return np.nan
+
+    # ------------------------------------------------------------------
+    # Feature extraction: each feature maps to one or more Yahoo keys.
+    # We compute derived features here rather than raw values because
+    # ratios like cash_covers_debt and fcf_yield don't exist directly
+    # in Yahoo's API — we have to calculate them from components.
+    # ------------------------------------------------------------------
+
+    # 1. PE Ratio — Price / Earnings.
+    #    "trailingPE" = based on actual past 12 months earnings.
+    #    We prefer trailing over forward because forward PE is an
+    #    analyst estimate, not a fact.
+    pe_ratio = safe_get("trailingPE")
+
+    # 2. PEG Ratio — PE / expected growth rate.
+    #    A PE of 30 is expensive for a slow grower but cheap for a
+    #    company growing 40%/year. PEG normalizes for growth.
+    #    PEG < 1 is classically considered undervalued.
+    peg_ratio = safe_get("pegRatio")
+
+    # 3. Operating Margin — what percentage of revenue is profit
+    #    before interest and taxes. Measures operational efficiency.
+    #    Yahoo returns this as a decimal (0.25 = 25%).
+    op_margin = safe_get("operatingMargins")
+
+    # 4. Revenue Growth — year-over-year revenue change.
+    #    Also a decimal (0.10 = 10% growth). Negative = shrinking.
+    revenue_growth = safe_get("revenueGrowth")
+
+    # 5. Debt to Equity — total debt / total shareholder equity.
+    #    High values (>2) mean the company is heavily leveraged.
+    #    Yahoo provides this directly.
+    debt_equity = safe_get("debtToEquity")
+
+    # 6. Current Ratio — current assets / current liabilities.
+    #    Above 1.0 = can pay short-term obligations. Below 1.0 = risky.
+    current_ratio = safe_get("currentRatio")
+
+    # 7. Cash Covers Debt — total cash / total debt.
+    #    A value > 1 means the company could pay off ALL debt with
+    #    cash on hand. We compute this ourselves because Yahoo
+    #    doesn't provide it directly.
+    total_cash = safe_get("totalCash")
+    total_debt = safe_get("totalDebt")
+    if np.isfinite(total_cash) and np.isfinite(total_debt) and total_debt > 0:
+        cash_covers_debt = total_cash / total_debt
+    else:
+        cash_covers_debt = np.nan
+
+    # 8. Free Cash Flow Yield — FCF / market cap.
+    #    Measures how much real cash the business generates relative
+    #    to its price. High FCF yield = you're paying less per dollar
+    #    of cash generated. It's like dividend yield but better because
+    #    it includes ALL free cash, not just what's paid as dividends.
+    fcf = safe_get("freeCashflow")
+    market_cap = safe_get("marketCap")
+    if np.isfinite(fcf) and np.isfinite(market_cap) and market_cap > 0:
+        fcf_yield = fcf / market_cap
+    else:
+        fcf_yield = np.nan
+
+    return {
+        "pe_ratio": pe_ratio,
+        "peg_ratio": peg_ratio,
+        "op_margin": op_margin,
+        "revenue_growth": revenue_growth,
+        "debt_equity": debt_equity,
+        "current_ratio": current_ratio,
+        "cash_covers_debt": cash_covers_debt,
+        "fcf_yield": fcf_yield,
+    }
+    
+    # ---------------------------------------------------------------------------
+# Combined feature pipeline
+# ---------------------------------------------------------------------------
+
+def build_feature_row(
+    ticker: str,
+    ohlcv_df: pd.DataFrame,
+    market_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Build a complete feature set for a single ticker.
+
+    This is the main entry point that other modules call. It chains
+    together the technical and fundamental feature computation into
+    a single DataFrame ready for model consumption.
+
+    The function:
+        1. Computes all 11 technical features from OHLCV data.
+        2. Fetches all 8 fundamental features from Yahoo Finance.
+        3. Adds the fundamental values as constant columns (same value
+           on every row, because fundamentals are a snapshot, not a
+           time series).
+        4. Drops rows where technical indicators are NaN due to warmup
+           (the first ~200 rows have no SMA_200, for example).
+
+    Parameters
+    ----------
+    ticker : str
+        Ticker symbol (e.g., ``"AAPL"``). Used to fetch fundamentals.
+    ohlcv_df : pd.DataFrame
+        OHLCV data for this ticker. Must have columns:
+        ``[Open, High, Low, Close, Volume]`` with a DatetimeIndex.
+    market_df : pd.DataFrame | None
+        OHLCV data for the S&P 500 index. Passed through to
+        ``compute_technical_features`` for the ``market_trend`` feature.
+
+    Returns
+    -------
+    pd.DataFrame
+        The original OHLCV data enriched with 19 feature columns
+        (11 technical + 8 fundamental). Rows with NaN in any
+        technical feature are dropped (warmup period).
+        The DataFrame retains its DatetimeIndex.
+
+    Examples
+    --------
+    >>> ohlcv = download_ohlcv(["AAPL"], period="2y")["AAPL"]
+    >>> market = download_ohlcv(["^GSPC"], period="2y")["^GSPC"]
+    >>> features = build_feature_row("AAPL", ohlcv, market)
+    >>> features.shape[1] >= 24  # 5 OHLCV + 11 tech + 8 fund
+    True
+    """
+    # ------------------------------------------------------------------
+    # Step 1: Technical features (11 new columns added to df)
+    # ------------------------------------------------------------------
+    df = compute_technical_features(ohlcv_df, market_df=market_df)
+
+    # ------------------------------------------------------------------
+    # Step 2: Fundamental features (8 values from Yahoo snapshot)
+    # ------------------------------------------------------------------
+    fundamentals = get_fundamental_features(ticker)
+
+    # Add each fundamental value as a constant column.
+    # Every row gets the same value because fundamentals represent
+    # the CURRENT state of the company, not a daily time series.
+    # When we use this for backtesting later, we'll need to be aware
+    # that this introduces a mild form of look-ahead bias — the
+    # current fundamentals are applied to historical rows. This is
+    # acceptable for a screening/decision tool but would need more
+    # careful handling in rigorous academic backtesting.
+    for feat_name, feat_value in fundamentals.items():
+        df[feat_name] = feat_value
+
+    # ------------------------------------------------------------------
+    # Step 3: Drop warmup rows.
+    # Technical indicators need N previous bars to compute. For example,
+    # SMA_200 needs 200 bars, so the first 199 rows are NaN. Williams %R
+    # needs 14 bars, RSI needs 14 bars, etc. The longest is SMA at 200,
+    # so effectively the first ~200 rows will have NaN in sma_distance
+    # and related features.
+    #
+    # We drop rows where ANY technical feature is NaN. We do NOT drop
+    # on fundamental NaN because those are expected (some companies
+    # simply don't report certain metrics) and the model handles them
+    # via imputation during training.
+    # ------------------------------------------------------------------
+
+    df = df.dropna(subset=TECHNICAL_FEATURES)
+
+    logger.debug(
+        "Built features for %s: %d rows, %d columns.",
+        ticker, len(df), len(df.columns),
+    )
 
     return df
