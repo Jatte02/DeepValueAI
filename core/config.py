@@ -35,6 +35,8 @@ PATHS = {
     "threshold_file": PROJECT_ROOT / "models" / "optimal_threshold.txt",
     "dataset_file": PROJECT_ROOT / "data" / "training_dataset.csv",
     "comparison_file": PROJECT_ROOT / "models" / "model_comparison.csv",
+    "backtest_model_file": PROJECT_ROOT / "models" / "best_model_backtest.pkl",
+    "backtest_threshold_file": PROJECT_ROOT / "models" / "optimal_threshold_backtest.txt",
 }
 
 

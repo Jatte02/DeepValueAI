@@ -38,6 +38,7 @@ import pandas as pd
 from .config import (
     DEFAULT_THRESHOLD,
     FEATURE_COLUMNS,
+    TECHNICAL_FEATURES,
     PATHS,
 )
 
@@ -215,102 +216,52 @@ def load_threshold(path: Path | None = None) -> float:
 def predict_proba(
     df: pd.DataFrame,
     model,
+    feature_list: list[str] | None = None,
 ) -> np.ndarray:
-    """Generate class probabilities for each row in the DataFrame.
+    """Return the positive-class probability for each row in *df*.
 
-    Takes a DataFrame that already has the 19 feature columns (produced
-    by ``data_service.build_feature_row``) and runs it through the
-    trained model's ``.predict_proba()`` method.
+    Extracts the features in the exact order expected by the model,
+    then calls ``model.predict_proba()``.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Must contain at least the 19 columns listed in
-        ``config.FEATURE_COLUMNS``. Extra columns (like OHLCV) are
-        ignored — we extract only the feature columns before predicting.
+        Must contain (at minimum) all columns in *feature_list*.
     model
-        A trained sklearn-compatible classifier with a
-        ``.predict_proba()`` method.
+        A fitted scikit-learn compatible estimator with a
+        ``predict_proba`` method.
+    feature_list : list[str] | None
+        Which feature columns to extract and in what order.
+        Defaults to ``config.FEATURE_COLUMNS`` (19 features).
+        Pass ``config.TECHNICAL_FEATURES`` (11 features) for the
+        backtest model, which was trained without fundamentals.
 
     Returns
     -------
     np.ndarray
-        1-D array of floats, shape ``(n_rows,)``. Each value is the
-        probability of the POSITIVE class (stock goes up) for that row.
-        Values range from 0.0 to 1.0.
+        1-D array of probabilities (one per row).
 
     Raises
     ------
     ValueError
-        If any of the 19 expected feature columns are missing from
-        the DataFrame.
-
-    Examples
-    --------
-    >>> probas = predict_proba(feature_df, model)
-    >>> probas.shape
-    (252,)
-    >>> 0.0 <= probas[0] <= 1.0
-    True
+        If any required column is missing from *df*.
     """
-    # ------------------------------------------------------------------
-    # Step 1: Validate that all required features are present.
-    #
-    # This catches bugs like:
-    #   - A feature was renamed in config but not in data_service
-    #   - build_feature_row() was called without market_df so
-    #     market_trend is missing
-    #   - Someone passed raw OHLCV without computing features
-    #
-    # We check BEFORE predicting because sklearn's error message for
-    # missing columns is cryptic: "Expected X features, got Y".
-    # Ours tells you exactly WHICH columns are missing.
-    # ------------------------------------------------------------------
-    missing = [col for col in FEATURE_COLUMNS if col not in df.columns]
+    if feature_list is None:
+        feature_list = FEATURE_COLUMNS
+
+    missing = [col for col in feature_list if col not in df.columns]
     if missing:
         raise ValueError(
-            f"DataFrame is missing {len(missing)} required feature column(s): "
-            f"{missing}. Expected all of: {FEATURE_COLUMNS}"
+            f"DataFrame is missing {len(missing)} required feature(s): {missing}"
         )
 
-    # ------------------------------------------------------------------
-    # Step 2: Extract feature columns in the EXACT order from config.
-    #
-    # WHY ORDER MATTERS:
-    #   sklearn models are trained on a matrix where column 0 = first
-    #   feature, column 1 = second feature, etc. The model memorizes
-    #   these positions, not the column names. If during training
-    #   column 0 was williams_r and during inference column 0 is
-    #   pe_ratio, the model silently produces garbage predictions
-    #   without any error.
-    #
-    #   By always extracting columns in FEATURE_COLUMNS order (which
-    #   is the same list used during training), we guarantee the
-    #   positions match.
-    # ------------------------------------------------------------------
-    X = df[FEATURE_COLUMNS]
-
-    # ------------------------------------------------------------------
-    # Step 3: Run prediction.
-    #
-    # .predict_proba() returns a 2-D array of shape (n_rows, 2):
-    #   column 0 = probability of class 0 (stock does NOT go up)
-    #   column 1 = probability of class 1 (stock DOES go up)
-    #
-    # We extract column 1 because we care about the probability of
-    # the positive outcome. The two columns always sum to 1.0, so
-    # column 0 is redundant information.
-    # ------------------------------------------------------------------
+    X = df[feature_list].values
     probabilities = model.predict_proba(X)[:, 1]
 
     logger.debug(
-        "Predicted %d rows. Probability range: [%.4f, %.4f], mean: %.4f.",
-        len(probabilities),
-        probabilities.min(),
-        probabilities.max(),
-        probabilities.mean(),
+        "Predicted %d rows. Prob range: [%.4f, %.4f].",
+        len(probabilities), probabilities.min(), probabilities.max(),
     )
-
     return probabilities
 
 # ---------------------------------------------------------------------------
