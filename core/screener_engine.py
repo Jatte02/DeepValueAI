@@ -40,7 +40,7 @@ from .data_service import (
     download_ohlcv,
     get_sp500_tickers,
 )
-from .prediction_service import load_model, predict_proba
+from .prediction_service import load_model, load_threshold, predict_proba
 
 logger = logging.getLogger(__name__)
 
@@ -171,8 +171,9 @@ def _compute_signal_metadata(
         "signal_freshness_days": freshness,
         "sma_headroom_pct": round(sma_headroom_pct, 4) if pd.notna(sma_headroom_pct) else np.nan,
     }
-    
-    # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # Single-ticker analysis
 # ---------------------------------------------------------------------------
 

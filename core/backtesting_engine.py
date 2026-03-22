@@ -149,8 +149,9 @@ class PortfolioState:
     trade_log: list[dict[str, Any]] = field(default_factory=list)
     daily_values: list[dict[str, Any]] = field(default_factory=list)
     last_buy_date: dict[str, pd.Timestamp] = field(default_factory=dict)
-    
-    # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # Exit logic
 # ---------------------------------------------------------------------------
 
@@ -355,7 +356,8 @@ def _check_exits(
 
     # Replace the positions list with only the survivors.
     state.positions = surviving_positions
-    
+
+
 # ---------------------------------------------------------------------------
 # Entry logic
 # ---------------------------------------------------------------------------
@@ -501,12 +503,10 @@ def _check_entries(
         # =============================================================
         last_buy = state.last_buy_date.get(ticker)
         if last_buy is not None:
-            # Count the actual trading days between last_buy and today.
-            # We use the difference in calendar days as a reasonable
-            # proxy. A more precise version would count only market
-            # open days, but calendar days is close enough and avoids
-            # needing a trading calendar dependency.
-            days_since = (date - last_buy).days
+            # Count business days (Mon-Fri) between last buy and today.
+            # This is more accurate than calendar days for a trading
+            # cooldown, since weekends don't count as trading days.
+            days_since = len(pd.bdate_range(last_buy, date)) - 1
             if days_since < COOLDOWN_DAYS_PER_TICKER:
                 logger.debug(
                     "%s | SKIP %s: cooldown (%d/%d days)",
@@ -710,7 +710,7 @@ def _process_day(
         "invested_value": invested_value,
     })
 
-    
+
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
@@ -1094,12 +1094,6 @@ def _compute_metrics(
             trades["action"] == "BUY", "value"
         ].sum()
         if total_bought > 0:
-            total_sold = trades.loc[
-                trades["action"].isin(["SELL", "SELL_PARTIAL"]), "value"
-            ].sum()
-            # Add unrealized value of open positions at end
-            unrealized = final_value - equity_curve.iloc[-1] + final_value - metrics["total_return"] * initial_value
-            # Simpler and more accurate: net profit / total invested
             net_profit = final_value - initial_value
             metrics["roi_on_invested"] = net_profit / total_bought
         else:
@@ -1261,15 +1255,6 @@ def _compute_metrics(
     #     Sum of all winning trade values / sum of all losing trade values.
     #     > 1.0 = profitable system. > 2.0 = very good.
     if len(sell_trades) > 0:
-        winning_value = sell_trades.loc[
-            sell_trades["return_pct"] > 0, "value"
-        ]
-        losing_value = sell_trades.loc[
-            sell_trades["return_pct"] <= 0, "value"
-        ]
-        # Profit factor uses the dollar value of wins vs losses.
-        # We need to compute actual P&L per trade, not just sell value.
-        # For simplicity, we use return_pct as a proxy.
         gross_wins = (
             sell_trades.loc[sell_trades["return_pct"] > 0, "return_pct"].sum()
         )
