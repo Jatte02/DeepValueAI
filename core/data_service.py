@@ -33,6 +33,7 @@ from .config import (
     ATR_LENGTH,
     DOWNLOAD_INTERVAL,
     DOWNLOAD_PERIOD,
+    FUNDAMENTAL_FEATURES,
     MACD_FAST,
     MACD_SIGNAL,
     MACD_SLOW,
