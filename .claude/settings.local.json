@@ -4,7 +4,11 @@
       "Bash(pip install:*)",
       "Bash(python -m pytest tests/ -v --tb=short)",
       "Bash(python -m venv .venv)",
-      "Bash(source .venv/Scripts/activate)"
+      "Bash(source .venv/Scripts/activate)",
+      "Bash(.venv/Scripts/python -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/python -c \"from ml_pipeline.generate_dataset import create_labels, generate_dataset; print\\(''generate_dataset OK''\\)\")",
+      "Bash(.venv/Scripts/python -c \"from ml_pipeline.train_model import train_models, time_split, find_optimal_threshold, get_candidate_models; print\\(''train_model OK''\\)\")",
+      "Bash(.venv/Scripts/python -c \":*)"
     ]
   }
 }

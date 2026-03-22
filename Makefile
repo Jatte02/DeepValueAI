@@ -20,10 +20,10 @@ install:  ## Install all dependencies (including dev)
 	pip install -e ".[dev]"
 
 dataset:  ## Generate the training dataset (ETL)
-	python ml_pipeline/generate_dataset.py
+	python -m ml_pipeline.generate_dataset
 
 train:  ## Train and compare ML models
-	python ml_pipeline/train_model.py
+	python -m ml_pipeline.train_model
 
 pipeline: dataset train  ## Full pipeline: generate data then train
 
