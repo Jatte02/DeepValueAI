@@ -134,11 +134,18 @@ def time_split(
 # Threshold optimization
 # ---------------------------------------------------------------------------
 
-def find_optimal_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    """Find the classification threshold that maximizes F1 score.
+def find_optimal_threshold(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    min_recall: float = 0.25,
+) -> float:
+    """Find the threshold that maximizes precision while keeping recall >= min_recall.
 
-    Sweeps thresholds from the sklearn precision-recall curve and picks
-    the one where ``F1 = 2·P·R / (P+R)`` is highest.
+    Philosophy: quality over quantity.  We want the model to say BUY
+    rarely, but when it does, it should be right.  This means we
+    optimize for **precision** (accuracy of BUY signals) while ensuring
+    recall stays above *min_recall* so the model still finds a
+    reasonable number of opportunities.
 
     Parameters
     ----------
@@ -146,6 +153,9 @@ def find_optimal_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
         Ground truth binary labels (0 or 1).
     y_prob : array-like
         Predicted probabilities for the positive class.
+    min_recall : float
+        Minimum acceptable recall.  Thresholds that push recall below
+        this value are discarded.
 
     Returns
     -------
@@ -154,15 +164,29 @@ def find_optimal_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
     """
     precisions, recalls, thresholds = precision_recall_curve(y_true, y_prob)
 
-    # F1 for each threshold (last element of precision/recall has no threshold)
-    denom = precisions[:-1] + recalls[:-1]
-    f1_scores = np.where(
-        denom > 0,
-        2 * precisions[:-1] * recalls[:-1] / denom,
-        0.0,
-    )
+    # Filter to thresholds that maintain minimum recall
+    valid_mask = recalls[:-1] >= min_recall
 
-    best_idx = int(f1_scores.argmax())
+    if not valid_mask.any():
+        # Fallback: pick threshold with best F1 if no threshold meets min_recall
+        denom = precisions[:-1] + recalls[:-1]
+        f1_scores = np.where(denom > 0, 2 * precisions[:-1] * recalls[:-1] / denom, 0.0)
+        best_idx = int(f1_scores.argmax())
+        logger.warning(
+            "No threshold achieves recall >= %.2f. "
+            "Falling back to best F1 threshold.",
+            min_recall,
+        )
+        return float(thresholds[best_idx])
+
+    # Among valid thresholds, pick the one with highest precision
+    valid_precisions = np.where(valid_mask, precisions[:-1], -1.0)
+    best_idx = int(valid_precisions.argmax())
+
+    logger.info(
+        "Optimal threshold: %.4f (precision=%.4f, recall=%.4f)",
+        thresholds[best_idx], precisions[best_idx], recalls[best_idx],
+    )
     return float(thresholds[best_idx])
 
 
@@ -188,6 +212,7 @@ def get_candidate_models() -> dict:
             learning_rate=0.05,
             max_depth=6,
             min_samples_leaf=20,
+            class_weight="balanced",
             random_state=42,
         ),
         "GradientBoosting": Pipeline([
@@ -206,6 +231,7 @@ def get_candidate_models() -> dict:
                 n_estimators=300,
                 max_depth=10,
                 min_samples_leaf=10,
+                class_weight="balanced",
                 random_state=42,
                 n_jobs=-1,
             )),
@@ -216,6 +242,7 @@ def get_candidate_models() -> dict:
             ("model", LogisticRegression(
                 C=1.0,
                 max_iter=1000,
+                class_weight="balanced",
                 random_state=42,
             )),
         ]),

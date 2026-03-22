@@ -135,8 +135,8 @@ MAX_HOLDING_DAYS = 120                 # Force sell after 120 trading days
 # Training target definition
 # ---------------------------------------------------------------------------
 
-PREDICTION_HORIZON_DAYS = 60     # Target: stock rises within N trading days
-MIN_RETURN_TARGET = 0.05         # Target: stock rises at least 5%
+PREDICTION_HORIZON_DAYS = 40     # Target: stock rises within N trading days
+MIN_RETURN_TARGET = 0.10         # Target: stock rises at least 10%
 
 
 # ---------------------------------------------------------------------------
