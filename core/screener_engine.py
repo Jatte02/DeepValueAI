@@ -354,14 +354,16 @@ def scan_sp500(
     """
     # ------------------------------------------------------------------
     # Step 1: Load model and threshold.
-    # load_model returns (model, threshold). If no threshold file
-    # exists, it falls back to DEFAULT_THRESHOLD from config.
+    # load_model returns the model; threshold is loaded separately via
+    # load_threshold(). If no threshold file exists, it falls back to
+    # DEFAULT_THRESHOLD from config.
     # ------------------------------------------------------------------
     _model_path = model_path or str(PATHS["model_file"])
     _threshold_path = threshold_path or str(PATHS["threshold_file"])
 
     logger.info("Loading production model from %s...", _model_path)
-    model, threshold = load_model(_model_path, _threshold_path)
+    model = load_model(_model_path)
+    threshold = load_threshold(_threshold_path)
     logger.info("Model loaded. Threshold: %.4f", threshold)
 
     feature_list = FEATURE_COLUMNS  # 19 features for production model
