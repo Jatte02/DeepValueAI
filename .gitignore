@@ -27,7 +27,19 @@ env/
 # ============================================================
 # El dataset de entrenamiento se regenera con: make dataset
 # Puede pesar cientos de MB. No pertenece en Git.
-data/dataset_diario.csv
+data/
+
+# ============================================================
+# Modelos entrenados
+# ============================================================
+# Los artefactos ML se regeneran con: make train
+# Los .pkl pesan decenas de MB. No pertenecen en Git.
+models/
+
+# ============================================================
+# Claude Code (configuración local)
+# ============================================================
+.claude/
 
 # ============================================================
 # Variables de entorno

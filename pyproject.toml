@@ -43,6 +43,9 @@ dev = [
 # ---------------------------------------------------------------
 # Configuración de Ruff (linter)
 # ---------------------------------------------------------------
+[tool.setuptools.packages.find]
+include = ["core*", "ml_pipeline*", "app*"]
+
 [tool.ruff]
 target-version = "py310"        # Asume Python 3.10+
 line-length = 100               # Máximo 100 caracteres por línea

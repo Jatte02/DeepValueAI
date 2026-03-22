@@ -90,7 +90,8 @@ def get_sp500_tickers() -> list[str]:
     # HTTP status codes. pd.read_html silently fails on some errors.
     # ------------------------------------------------------------------
     try:
-        response = requests.get(SP500_WIKI_URL, timeout=15)
+        headers = {"User-Agent": "DeepValueAI/2.0 (academic research)"}
+        response = requests.get(SP500_WIKI_URL, headers=headers, timeout=15)
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ConnectionError(
