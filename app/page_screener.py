@@ -68,6 +68,20 @@ _DISPLAY_COLS = [
     "pe_ratio", "peg_ratio", "fcf_yield",
 ]
 
+# Mapping from internal column names to user-friendly display names.
+_COLUMN_LABELS = {
+    "ticker": "Ticker",
+    "close": "Price",
+    "probability": "Buy Prob.",
+    "signal_strength": "Strength",
+    "signal_freshness_days": "Signal Days",
+    "sma_headroom_pct": "SMA Margin",
+    "passes_filters": "Passes",
+    "pe_ratio": "P/E",
+    "peg_ratio": "PEG",
+    "fcf_yield": "FCF Yield",
+}
+
 _FORMAT_MAP = {
     "probability": "{:.1%}",
     "signal_strength": "{:.1%}",
@@ -101,26 +115,22 @@ def _display_results(df: pd.DataFrame):
 
     # Select available columns
     available = [c for c in _DISPLAY_COLS if c in filtered.columns]
-    fmt = {k: v for k, v in _FORMAT_MAP.items() if k in available}
 
-    # Apply row highlighting: green for passing, neutral otherwise.
-    # Use semi-transparent colors that work on both light and dark themes,
-    # and force text color so it's always readable.
-    def _highlight_passing(row):
-        if row.get("passes_filters"):
-            return [
-                "background-color: rgba(76, 175, 80, 0.18); color: inherit"
-            ] * len(row)
-        return [""] * len(row)
+    # Format columns for display (avoid pandas Styler — it has
+    # compatibility issues with Streamlit's dark theme that make
+    # text invisible). Instead, format values directly in the DataFrame.
+    display_df = filtered[available].copy()
+    for col, fmt_str in _FORMAT_MAP.items():
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(
+                lambda v, f=fmt_str: f.format(v) if pd.notna(v) else "N/A"
+            )
 
-    styled = (
-        filtered[available]
-        .style
-        .format(fmt, na_rep="N/A")
-        .apply(_highlight_passing, axis=1)
-    )
+    # Rename columns to user-friendly labels
+    rename = {c: _COLUMN_LABELS.get(c, c) for c in display_df.columns}
+    display_df = display_df.rename(columns=rename)
 
-    st.dataframe(styled, use_container_width=True, height=600)
+    st.dataframe(display_df, use_container_width=True, height=600)
 
     # Download button
     csv = filtered[available].to_csv(index=False).encode("utf-8")

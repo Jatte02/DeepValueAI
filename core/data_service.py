@@ -471,7 +471,7 @@ def get_fundamental_features(ticker: str) -> dict[str, float]:
     #    A PE of 30 is expensive for a slow grower but cheap for a
     #    company growing 40%/year. PEG normalizes for growth.
     #    PEG < 1 is classically considered undervalued.
-    peg_ratio = safe_get("pegRatio")
+    peg_ratio = safe_get("trailingPegRatio") or safe_get("pegRatio")
 
     # 3. Operating Margin — what percentage of revenue is profit
     #    before interest and taxes. Measures operational efficiency.
