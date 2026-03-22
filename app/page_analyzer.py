@@ -24,7 +24,7 @@ from core.prediction_service import generate_signal, load_model, load_threshold
 # Cached model loading — loaded once, reused across reruns
 # ---------------------------------------------------------------------------
 
-@st.cache_resource(show_spinner="Cargando modelo de producción...")
+@st.cache_resource(show_spinner="Loading production model...")
 def _load_production_model():
     model = load_model(PATHS["model_file"])
     threshold = load_threshold(PATHS["threshold_file"])
@@ -36,10 +36,10 @@ def _load_production_model():
 # ---------------------------------------------------------------------------
 
 def render():
-    st.title("Analizador Individual")
+    st.title("Individual Analyzer")
     st.markdown(
-        "Introduce un ticker del S&P 500 para obtener la predicción del modelo, "
-        "indicadores técnicos y métricas fundamentales."
+        "Enter an S&P 500 ticker to get the model prediction, "
+        "technical indicators, and fundamental metrics."
     )
 
     # --- Input ---
@@ -50,15 +50,15 @@ def render():
         ).upper().strip()
     with col_period:
         months_back = st.selectbox(
-            "Mostrar últimos",
+            "Show last",
             [3, 6, 12, 24, 60],
             index=2,
-            format_func=lambda m: f"{m} meses",
+            format_func=lambda m: f"{m} months",
         )
 
-    if st.button("Analizar", type="primary"):
+    if st.button("Analyze", type="primary"):
         if not ticker:
-            st.warning("Introduce un ticker válido.")
+            st.warning("Please enter a valid ticker.")
             return
         _run_analysis(ticker, months_back)
 
@@ -73,26 +73,26 @@ def _run_analysis(ticker: str, months_back: int):
         model, threshold = _load_production_model()
     except FileNotFoundError:
         st.error(
-            "Modelo no encontrado. Ejecuta **`make pipeline`** para entrenar el modelo."
+            "Model not found. Run **`make pipeline`** to train the model."
         )
         return
 
     # Download OHLCV
-    with st.spinner(f"Descargando datos de {ticker}..."):
+    with st.spinner(f"Downloading data for {ticker}..."):
         data = download_ohlcv([ticker, "^GSPC"])
 
     if ticker not in data:
-        st.error(f"No se pudieron descargar datos para **{ticker}**.")
+        st.error(f"Could not download data for **{ticker}**.")
         return
 
     market_df = data.get("^GSPC")
 
     # Feature engineering
-    with st.spinner("Calculando features..."):
+    with st.spinner("Computing features..."):
         df = build_feature_row(ticker, data[ticker], market_df=market_df)
 
     if df.empty:
-        st.error("Datos insuficientes para calcular indicadores técnicos.")
+        st.error("Insufficient data to compute technical indicators.")
         return
 
     # Prediction on latest row
@@ -145,13 +145,13 @@ def _show_signal_card(signal_info: dict, threshold: float, df: pd.DataFrame, tic
     )
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Probabilidad", f"{prob:.1%}")
-    c2.metric("Confianza", confidence)
+    c1.metric("Probability", f"{prob:.1%}")
+    c2.metric("Confidence", confidence)
     c3.metric("Threshold", f"{threshold:.1%}")
-    c4.metric("Cierre", f"${latest_close:,.2f}")
+    c4.metric("Close", f"${latest_close:,.2f}")
     c5.metric(
         "SMA 200",
-        f"${latest_sma:,.2f}" if pd.notna(latest_sma) else "N/D",
+        f"${latest_sma:,.2f}" if pd.notna(latest_sma) else "N/A",
     )
 
 
@@ -160,12 +160,12 @@ def _show_signal_card(signal_info: dict, threshold: float, df: pd.DataFrame, tic
 # ---------------------------------------------------------------------------
 
 def _plot_price_chart(df: pd.DataFrame, ticker: str):
-    st.subheader("Precio y SMA 200")
+    st.subheader("Price & SMA 200")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=df.index, y=df["Close"],
-        name="Precio", line=dict(color="#2196F3", width=2),
+        name="Price", line=dict(color="#2196F3", width=2),
     ))
     if "sma_200" in df.columns:
         fig.add_trace(go.Scatter(
@@ -174,8 +174,8 @@ def _plot_price_chart(df: pd.DataFrame, ticker: str):
         ))
 
     fig.update_layout(
-        xaxis_title="Fecha",
-        yaxis_title="Precio ($)",
+        xaxis_title="Date",
+        yaxis_title="Price ($)",
         height=420,
         template="plotly_white",
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
@@ -189,7 +189,7 @@ def _plot_price_chart(df: pd.DataFrame, ticker: str):
 # ---------------------------------------------------------------------------
 
 def _plot_technicals(df: pd.DataFrame):
-    st.subheader("Indicadores Técnicos")
+    st.subheader("Technical Indicators")
 
     fig = make_subplots(
         rows=3, cols=1, shared_xaxes=True,
@@ -239,17 +239,17 @@ def _plot_technicals(df: pd.DataFrame):
 _FUND_LABELS = {
     "pe_ratio": ("PE Ratio", "num"),
     "peg_ratio": ("PEG Ratio", "num"),
-    "op_margin": ("Margen Operativo", "pct"),
-    "revenue_growth": ("Crecimiento Ingresos", "pct"),
-    "debt_equity": ("Deuda / Equity", "num"),
+    "op_margin": ("Operating Margin", "pct"),
+    "revenue_growth": ("Revenue Growth", "pct"),
+    "debt_equity": ("Debt / Equity", "num"),
     "current_ratio": ("Current Ratio", "num"),
-    "cash_covers_debt": ("Cash / Deuda", "num"),
+    "cash_covers_debt": ("Cash / Debt", "num"),
     "fcf_yield": ("FCF Yield", "pct"),
 }
 
 
 def _show_fundamentals(df: pd.DataFrame):
-    st.subheader("Métricas Fundamentales")
+    st.subheader("Fundamental Metrics")
 
     latest = df.iloc[-1]
     cols = st.columns(4)
@@ -260,5 +260,5 @@ def _show_fundamentals(df: pd.DataFrame):
             if pd.notna(val):
                 display = f"{val:.2%}" if fmt == "pct" else f"{val:.2f}"
             else:
-                display = "N/D"
+                display = "N/A"
             st.metric(label, display)

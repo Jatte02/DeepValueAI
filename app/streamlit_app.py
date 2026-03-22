@@ -2,9 +2,9 @@
 DeepValue AI — Streamlit Dashboard
 
 Main entry point.  Sidebar navigation to three views:
-    1. Analizador Individual — single ticker deep-dive
-    2. Screener S&P 500     — batch scan for opportunities
-    3. Backtesting           — historical simulation with benchmark
+    1. Individual Analyzer — single ticker deep-dive
+    2. S&P 500 Screener   — batch scan for opportunities
+    3. Backtesting         — historical simulation with benchmark
 """
 
 import sys
@@ -32,30 +32,30 @@ st.set_page_config(
 # Sidebar navigation
 # ---------------------------------------------------------------------------
 st.sidebar.title("DeepValue AI")
-st.sidebar.caption("Sistema de soporte a la inversión con ML")
+st.sidebar.caption("ML-powered investment decision support system")
 
 page = st.sidebar.radio(
-    "Navegación",
+    "Navigation",
     [
-        "Analizador Individual",
-        "Screener S&P 500",
+        "Individual Analyzer",
+        "S&P 500 Screener",
         "Backtesting",
     ],
 )
 
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "Los modelos se generan con **`make pipeline`**.\n\n"
-    "Sin modelos entrenados la app no puede generar predicciones."
+    "Models are generated with **`make pipeline`**.\n\n"
+    "Without trained models the app cannot generate predictions."
 )
 
 # ---------------------------------------------------------------------------
 # Page routing
 # ---------------------------------------------------------------------------
-if page == "Analizador Individual":
+if page == "Individual Analyzer":
     from page_analyzer import render
     render()
-elif page == "Screener S&P 500":
+elif page == "S&P 500 Screener":
     from page_screener import render
     render()
 else:

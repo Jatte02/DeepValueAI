@@ -18,37 +18,37 @@ _TEST_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ", 
 # ---------------------------------------------------------------------------
 
 def render():
-    st.title("Screener S&P 500")
+    st.title("S&P 500 Screener")
     st.markdown(
-        "Escanea el S&P 500 con el modelo de producción (19 features) "
-        "y muestra las oportunidades ordenadas por probabilidad."
+        "Scans the S&P 500 with the production model (19 features) "
+        "and displays opportunities ranked by probability."
     )
 
     # --- Controls ---
     col1, col2 = st.columns([2, 1])
     with col1:
         mode = st.radio(
-            "Modo de escaneo",
-            ["Test rápido (10 tickers)", "S&P 500 completo (~15 min)"],
+            "Scan mode",
+            ["Quick test (10 tickers)", "Full S&P 500 (~15 min)"],
             horizontal=True,
         )
     with col2:
-        show_all = st.checkbox("Incluir tickers sin señal", value=True)
+        show_all = st.checkbox("Include tickers without signal", value=True)
 
-    if st.button("Escanear", type="primary"):
-        tickers = _TEST_TICKERS if "Test" in mode else None
+    if st.button("Scan", type="primary"):
+        tickers = _TEST_TICKERS if "Quick" in mode else None
 
-        with st.spinner("Escaneando... esto puede tardar varios minutos."):
+        with st.spinner("Scanning... this may take several minutes."):
             try:
                 results = scan_sp500(tickers=tickers, include_failing=show_all)
             except FileNotFoundError:
                 st.error(
-                    "Modelo no encontrado. Ejecuta **`make pipeline`** para entrenar."
+                    "Model not found. Run **`make pipeline`** to train."
                 )
                 return
 
         if results.empty:
-            st.warning("No se encontraron resultados.")
+            st.warning("No results found.")
             return
 
         st.session_state["screener_results"] = results
@@ -82,37 +82,41 @@ _FORMAT_MAP = {
 def _display_results(df: pd.DataFrame):
     # Summary
     n_pass = int(df["passes_filters"].sum())
-    st.success(f"**{n_pass}** oportunidades de **{len(df)}** tickers analizados.")
+    st.success(f"**{n_pass}** opportunities out of **{len(df)}** tickers analyzed.")
 
     # Filter controls
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        min_prob = st.slider("Probabilidad mínima", 0.0, 1.0, 0.0, 0.05)
+        min_prob = st.slider("Minimum probability", 0.0, 1.0, 0.0, 0.05)
     with col_f2:
-        only_passing = st.checkbox("Solo tickers que pasan filtros", value=False)
+        only_passing = st.checkbox("Only tickers passing filters", value=False)
 
     filtered = df[df["probability"] >= min_prob].copy()
     if only_passing:
         filtered = filtered[filtered["passes_filters"]].copy()
 
     if filtered.empty:
-        st.info("Ningún ticker cumple los filtros seleccionados.")
+        st.info("No tickers match the selected filters.")
         return
 
     # Select available columns
     available = [c for c in _DISPLAY_COLS if c in filtered.columns]
     fmt = {k: v for k, v in _FORMAT_MAP.items() if k in available}
 
-    # Apply row highlighting: green for passing, neutral otherwise
+    # Apply row highlighting: green for passing, neutral otherwise.
+    # Use semi-transparent colors that work on both light and dark themes,
+    # and force text color so it's always readable.
     def _highlight_passing(row):
         if row.get("passes_filters"):
-            return ["background-color: #e8f5e9"] * len(row)
+            return [
+                "background-color: rgba(76, 175, 80, 0.18); color: inherit"
+            ] * len(row)
         return [""] * len(row)
 
     styled = (
         filtered[available]
         .style
-        .format(fmt, na_rep="N/D")
+        .format(fmt, na_rep="N/A")
         .apply(_highlight_passing, axis=1)
     )
 
@@ -121,7 +125,7 @@ def _display_results(df: pd.DataFrame):
     # Download button
     csv = filtered[available].to_csv(index=False).encode("utf-8")
     st.download_button(
-        "Descargar CSV",
+        "Download CSV",
         data=csv,
         file_name="screener_results.csv",
         mime="text/csv",

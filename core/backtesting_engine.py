@@ -877,10 +877,10 @@ def run_backtest(
 
     if start_date is not None:
         start_ts = pd.Timestamp(start_date)
-        all_dates = [d for d in all_dates if d >= start_ts]
+        all_dates = [d for d in all_dates if d.tz_localize(None) >= start_ts]
     if end_date is not None:
         end_ts = pd.Timestamp(end_date)
-        all_dates = [d for d in all_dates if d <= end_ts]
+        all_dates = [d for d in all_dates if d.tz_localize(None) <= end_ts]
 
     if not all_dates:
         raise RuntimeError(

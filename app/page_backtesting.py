@@ -28,30 +28,30 @@ _TEST_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ", 
 def render():
     st.title("Backtesting")
     st.markdown(
-        "Simula la estrategia DeepValue AI sobre datos históricos y compara "
-        "con una estrategia pasiva de buy-and-hold del S&P 500."
+        "Simulates the DeepValue AI strategy on historical data and compares "
+        "against a passive S&P 500 buy-and-hold benchmark."
     )
 
     # --- Configuration ---
     col1, col2, col3 = st.columns(3)
     with col1:
         mode = st.radio(
-            "Universo",
-            ["Test (10 tickers)", "S&P 500 completo"],
+            "Universe",
+            ["Test (10 tickers)", "Full S&P 500"],
             horizontal=True,
         )
     with col2:
-        start_date = st.date_input("Fecha inicio", value=pd.Timestamp("2021-01-01"))
-        end_date = st.date_input("Fecha fin", value=pd.Timestamp("2024-12-31"))
+        start_date = st.date_input("Start date", value=pd.Timestamp("2021-01-01"))
+        end_date = st.date_input("End date", value=pd.Timestamp("2024-12-31"))
     with col3:
         capital = st.number_input(
-            "Capital inicial ($)", value=100_000, step=10_000, min_value=10_000,
+            "Initial capital ($)", value=100_000, step=10_000, min_value=10_000,
         )
 
-    if st.button("Ejecutar Backtest", type="primary"):
+    if st.button("Run Backtest", type="primary"):
         tickers = _TEST_TICKERS if "Test" in mode else None
 
-        with st.spinner("Ejecutando backtest... esto puede tardar varios minutos."):
+        with st.spinner("Running backtest... this may take several minutes."):
             try:
                 result = run_backtest(
                     tickers=tickers,
@@ -61,12 +61,12 @@ def render():
                 )
             except FileNotFoundError:
                 st.error(
-                    "Modelo de backtest no encontrado. "
-                    "Ejecuta **`make pipeline`** para entrenar."
+                    "Backtest model not found. "
+                    "Run **`make pipeline`** to train."
                 )
                 return
             except RuntimeError as e:
-                st.error(f"Error en el backtest: {e}")
+                st.error(f"Backtest error: {e}")
                 return
 
         st.session_state["backtest_result"] = result
@@ -96,11 +96,11 @@ def _display_results(result):
 # ---------------------------------------------------------------------------
 
 def _show_key_metrics(m: dict):
-    st.subheader("Resumen")
+    st.subheader("Summary")
 
     cards = [
-        ("Retorno Total", m.get("total_return"), "{:.2%}"),
-        ("Retorno Anualizado", m.get("annualized_return"), "{:.2%}"),
+        ("Total Return", m.get("total_return"), "{:.2%}"),
+        ("Annualized Return", m.get("annualized_return"), "{:.2%}"),
         ("Sharpe Ratio", m.get("sharpe_ratio"), "{:.2f}"),
         ("Max Drawdown", m.get("max_drawdown"), "{:.2%}"),
         ("Win Rate", m.get("win_rate"), "{:.1%}"),
@@ -109,7 +109,7 @@ def _show_key_metrics(m: dict):
 
     cols = st.columns(len(cards))
     for col, (label, val, fmt) in zip(cols, cards):
-        display = fmt.format(val) if val is not None else "N/D"
+        display = fmt.format(val) if val is not None else "N/A"
         col.metric(label, display)
 
 
@@ -118,7 +118,7 @@ def _show_key_metrics(m: dict):
 # ---------------------------------------------------------------------------
 
 def _plot_equity_curve(result):
-    st.subheader("Curva de Equity vs S&P 500")
+    st.subheader("Equity Curve vs S&P 500")
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -134,8 +134,8 @@ def _plot_equity_curve(result):
         line=dict(color="#FF9800", width=2, dash="dash"),
     ))
     fig.update_layout(
-        xaxis_title="Fecha",
-        yaxis_title="Valor del Portfolio ($)",
+        xaxis_title="Date",
+        yaxis_title="Portfolio Value ($)",
         height=480,
         template="plotly_white",
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
@@ -166,7 +166,7 @@ def _plot_drawdown(equity_curve: pd.Series):
         fillcolor="rgba(244, 67, 54, 0.25)",
     ))
     fig.update_layout(
-        xaxis_title="Fecha",
+        xaxis_title="Date",
         yaxis_title="Drawdown",
         height=300,
         template="plotly_white",
@@ -185,9 +185,9 @@ def _show_monthly_heatmap(metrics: dict):
     if not monthly_raw:
         return
 
-    st.subheader("Retornos Mensuales")
+    st.subheader("Monthly Returns")
 
-    # Build a DataFrame with year × month
+    # Build a DataFrame with year x month
     records = []
     for date_str, ret in monthly_raw.items():
         dt = pd.Timestamp(date_str)
@@ -199,8 +199,8 @@ def _show_monthly_heatmap(metrics: dict):
 
     pivot = df.pivot_table(index="year", columns="month", values="return", aggfunc="first")
     pivot.columns = [
-        "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-        "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ][:len(pivot.columns)]
 
     # Color scale: red for negative, green for positive
@@ -217,7 +217,7 @@ def _show_monthly_heatmap(metrics: dict):
         text=[[f"{v:.1%}" if pd.notna(v) else "" for v in row] for row in pivot.values],
         texttemplate="%{text}",
         textfont=dict(size=11),
-        colorbar=dict(title="Retorno", tickformat=".0%"),
+        colorbar=dict(title="Return", tickformat=".0%"),
     ))
     fig.update_layout(
         height=max(200, 60 * len(pivot)),
@@ -233,35 +233,35 @@ def _show_monthly_heatmap(metrics: dict):
 # ---------------------------------------------------------------------------
 
 _METRIC_TIERS = {
-    "Retorno": [
-        ("total_return", "Retorno Total", "pct"),
-        ("annualized_return", "Retorno Anualizado", "pct"),
-        ("roi_on_invested", "ROI sobre Capital Invertido", "pct"),
-        ("benchmark_return", "Retorno Benchmark", "pct"),
+    "Return": [
+        ("total_return", "Total Return", "pct"),
+        ("annualized_return", "Annualized Return", "pct"),
+        ("roi_on_invested", "ROI on Invested Capital", "pct"),
+        ("benchmark_return", "Benchmark Return", "pct"),
         ("alpha", "Alpha", "pct"),
     ],
-    "Riesgo": [
+    "Risk": [
         ("max_drawdown", "Max Drawdown", "pct"),
-        ("max_drawdown_duration", "Duración Max DD (días)", "int"),
-        ("volatility", "Volatilidad Anualizada", "pct"),
+        ("max_drawdown_duration", "Max DD Duration (days)", "int"),
+        ("volatility", "Annualized Volatility", "pct"),
         ("value_at_risk", "VaR 95%", "pct"),
         ("conditional_var", "CVaR 95%", "pct"),
     ],
-    "Riesgo-Ajustado": [
+    "Risk-Adjusted": [
         ("sharpe_ratio", "Sharpe Ratio", "dec"),
         ("sortino_ratio", "Sortino Ratio", "dec"),
         ("calmar_ratio", "Calmar Ratio", "dec"),
         ("omega_ratio", "Omega Ratio", "dec"),
-        ("recovery_factor", "Factor de Recuperación", "dec"),
+        ("recovery_factor", "Recovery Factor", "dec"),
     ],
-    "Calidad de Trades": [
+    "Trade Quality": [
         ("win_rate", "Win Rate", "pct"),
         ("profit_factor", "Profit Factor", "dec"),
         ("avg_win_vs_avg_loss", "Avg Win / Avg Loss", "dec"),
-        ("num_trades", "Total Operaciones", "int"),
+        ("num_trades", "Total Trades", "int"),
     ],
-    "Consistencia": [
-        ("positive_months_pct", "Meses Positivos", "pct"),
+    "Consistency": [
+        ("positive_months_pct", "Positive Months", "pct"),
         ("ulcer_index", "Ulcer Index", "dec"),
     ],
 }
@@ -269,7 +269,7 @@ _METRIC_TIERS = {
 
 def _fmt_metric(val, kind: str) -> str:
     if val is None or (isinstance(val, float) and np.isnan(val)):
-        return "N/D"
+        return "N/A"
     if kind == "pct":
         return f"{val:.2%}"
     if kind == "int":
@@ -278,7 +278,7 @@ def _fmt_metric(val, kind: str) -> str:
 
 
 def _show_all_metrics(metrics: dict):
-    with st.expander("Todas las métricas (22 métricas, 5 tiers)"):
+    with st.expander("All metrics (22 metrics, 5 tiers)"):
         for tier_name, items in _METRIC_TIERS.items():
             st.markdown(f"**{tier_name}**")
             tier_cols = st.columns(len(items))
@@ -301,16 +301,16 @@ _TRADE_FMT = {
 
 
 def _show_trade_log(trades: pd.DataFrame):
-    st.subheader("Registro de Operaciones")
+    st.subheader("Trade Log")
 
     if trades.empty:
-        st.info("No se ejecutaron operaciones durante el periodo.")
+        st.info("No trades were executed during this period.")
         return
 
     # Summary
     n_buys = int((trades["action"] == "BUY").sum())
     n_sells = int(trades["action"].isin(["SELL", "SELL_PARTIAL"]).sum())
-    st.caption(f"{n_buys} compras · {n_sells} ventas · {len(trades)} operaciones totales")
+    st.caption(f"{n_buys} buys · {n_sells} sells · {len(trades)} total trades")
 
     # Display
     display_cols = [c for c in ["date", "ticker", "action", "price", "shares",
@@ -326,7 +326,7 @@ def _show_trade_log(trades: pd.DataFrame):
     # Download
     csv = trades.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "Descargar operaciones (CSV)",
+        "Download trades (CSV)",
         data=csv,
         file_name="backtest_trades.csv",
         mime="text/csv",
