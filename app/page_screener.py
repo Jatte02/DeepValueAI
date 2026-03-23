@@ -20,7 +20,7 @@ _TEST_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ", 
 def render():
     st.title("S&P 500 Screener")
     st.markdown(
-        "Scans the S&P 500 with the production model (19 features) "
+        "Scans the S&P 500 with the production model (34 features) "
         "and displays opportunities ranked by probability."
     )
 

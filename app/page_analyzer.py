@@ -2,7 +2,7 @@
 Individual ticker analyzer page.
 
 Downloads OHLCV + fundamentals for a single ticker, runs the
-production model (19 features), and displays:
+production model (34 features), and displays:
     - Signal card (BUY / HOLD) with probability and confidence
     - Price chart with SMA 200
     - Technical indicator subplots (RSI, Williams %R, MACD)

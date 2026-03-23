@@ -1,7 +1,7 @@
 """
 Model training, comparison, and artifact export.
 
-Trains four sklearn classifiers on the generated dataset, optimizes the
+Trains three sklearn classifiers on the generated dataset, optimizes the
 classification threshold for each via precision-recall analysis, selects
 the best model by validation F1, and saves all artifacts:
 
@@ -11,18 +11,17 @@ the best model by validation F1, and saves all artifacts:
 
 SPLITTING STRATEGY:
     Time-based split (NOT random) to respect the temporal nature of
-    financial data. A gap of PREDICTION_HORIZON_DAYS (60 trading days)
+    financial data. A gap of PREDICTION_HORIZON_DAYS (40 trading days)
     is inserted between train/val and val/test to prevent label leakage
-    (labels look 60 days forward, so the last training labels would
+    (labels look 40 days forward, so the last training labels would
     "peek" into the validation period without the gap).
 
         |--- train (70%) ---|-- gap --|--- val (15%) ---|-- gap --|--- test (15%) ---|
 
 MODELS COMPARED:
     1. HistGradientBoosting — handles NaN natively, no imputation needed
-    2. GradientBoosting     — Pipeline with median imputation
-    3. RandomForest         — Pipeline with median imputation
-    4. LogisticRegression   — Pipeline with imputation + scaling
+    2. RandomForest         — Pipeline with median imputation
+    3. LogisticRegression   — Pipeline with imputation + scaling
 
     All are sklearn-native (no XGBoost/LightGBM dependency).
     HistGradientBoosting is the expected winner: it's essentially sklearn's

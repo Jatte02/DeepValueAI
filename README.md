@@ -63,7 +63,7 @@ DeepValueAI/
 │
 ├── models/                        # Trained model artifacts
 ├── data/                          # Generated datasets (Parquet + CSV)
-└── tests/                         # Unit tests (175 tests)
+└── tests/                         # Unit tests (179 tests)
 ```
 
 ---
@@ -133,7 +133,7 @@ Yahoo Finance (OHLCV + VIX) ─────────────────�
                             training_dataset.csv (34 features)
                                                │
                                                ▼
-                             train_model (4 classifiers)
+                             train_model (3 classifiers)
                                                │
                                                ▼
                             best_model.pkl + optimal_threshold.txt
@@ -148,10 +148,10 @@ Yahoo Finance (OHLCV + VIX) ─────────────────�
 | Data | yfinance, SimFin, FRED API, SEC EDGAR |
 | NLP | HuggingFace Transformers (FinBERT), PyTorch |
 | Technical Analysis | pandas_ta (SMA, Williams %R, RSI, MACD) |
-| Machine Learning | scikit-learn (HistGradientBoosting, RandomForest, GBM, LogReg) |
+| Machine Learning | scikit-learn (HistGradientBoosting, RandomForest, LogReg) |
 | Visualization | Streamlit, Plotly, matplotlib, seaborn |
 | Storage | Parquet (pyarrow), CSV |
-| Quality | pytest (175 tests), ruff |
+| Quality | pytest (179 tests), ruff |
 
 ---
 
@@ -161,7 +161,7 @@ Yahoo Finance (OHLCV + VIX) ─────────────────�
 - **Point-in-time safe**: Every data source uses its real publication date — no look-ahead bias.
 - **Separation of concerns**: `core/` has zero UI dependencies. Streamlit pages are thin renderers.
 - **Single source of truth**: Data fetching, feature engineering, and prediction each live in one place.
-- **Testable**: Every engine runs without Streamlit. `make test` verifies everything (175 tests).
+- **Testable**: Every engine runs without Streamlit. `make test` verifies everything (179 tests).
 
 ---
 

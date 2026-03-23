@@ -200,7 +200,7 @@ def download_ohlcv(
     tickers : list[str]
         Ticker symbols to download (e.g., ``["AAPL", "MSFT"]``).
     period : str
-        Lookback period (default from config: ``"5y"``).
+        Lookback period (default from config: ``"10y"``).
         Valid values: "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max".
     interval : str
         Bar interval (default from config: ``"1d"``).
