@@ -1043,27 +1043,37 @@ def _build_benchmark_curve(
     pd.Series
         Daily benchmark portfolio value, indexed by date.
     """
-    # Find the first simulation date that exists in market data.
+    # Build a lookup from calendar date → Close price (strips tz and time).
+    price_lookup = {
+        ts.date(): price
+        for ts, price in market_df["Close"].items()
+    }
+
     benchmark_values = {}
     shares = None
 
     for date in dates:
-        if date not in market_df.index:
+        cal_date = date.date() if hasattr(date, "date") else date
+        if cal_date not in price_lookup:
             continue
 
-        price = market_df.loc[date, "Close"]
+        price = price_lookup[cal_date]
 
         # Buy on the first available day.
         if shares is None:
             shares = initial_capital / price
 
+        # Store with ORIGINAL timestamp (same index as equity_curve).
         benchmark_values[date] = shares * price
+
+    if not benchmark_values:
+        # Fallback: return zeros so metrics don't crash.
+        return pd.Series(0.0, index=dates, name="benchmark_value")
 
     result = pd.Series(benchmark_values, name="benchmark_value")
     result.index.name = "date"
 
     # Forward-fill to cover dates where market data might be missing.
-    # Then reindex to match the simulation dates exactly.
     result = result.reindex(dates, method="ffill")
 
     return result

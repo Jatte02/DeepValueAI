@@ -10,11 +10,15 @@ the best model by validation F1, and saves all artifacts:
     models/model_comparison.csv         — metrics for every model x split
 
 SPLITTING STRATEGY:
-    Time-based split (NOT random) to respect the temporal nature of
-    financial data. A gap of PREDICTION_HORIZON_DAYS (40 trading days)
-    is inserted between train/val and val/test to prevent label leakage
-    (labels look 40 days forward, so the last training labels would
-    "peek" into the validation period without the gap).
+    Two-phase temporal approach:
+
+    Phase 1 — Model selection via expanding-window temporal CV (3 folds).
+    The first 85% of dates are split into 4 chunks; each fold trains on
+    all chunks up to i and validates on chunk i+1.  A gap of
+    PREDICTION_HORIZON_DAYS separates train from val in each fold.
+
+    Phase 2 — Final training on 70% / 15% val / 15% test (with gaps).
+    All models are retrained and evaluated; the CV winner is saved.
 
         |--- train (70%) ---|-- gap --|--- val (15%) ---|-- gap --|--- test (15%) ---|
 
@@ -45,8 +49,8 @@ import logging
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.ensemble import (
-    GradientBoostingClassifier,
     HistGradientBoostingClassifier,
     RandomForestClassifier,
 )
@@ -80,6 +84,7 @@ logger = logging.getLogger(__name__)
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 # TEST_RATIO = 0.15 (implicit: 1 - TRAIN_RATIO - VAL_RATIO)
+N_CV_FOLDS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +129,65 @@ def time_split(
     test = df[df["date"].isin(test_dates)]
 
     return train, val, test
+
+
+def time_series_cv_splits(
+    df: pd.DataFrame,
+    n_folds: int = N_CV_FOLDS,
+) -> list[tuple[pd.DataFrame, pd.DataFrame]]:
+    """Generate expanding-window temporal CV folds from the training portion.
+
+    Uses the first 85% of dates (same as train+val in ``time_split``),
+    divided into ``n_folds + 1`` chunks.  Each fold trains on all chunks
+    up to *i* and validates on chunk *i+1*, with a gap of
+    ``PREDICTION_HORIZON_DAYS`` between them to prevent label leakage.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain a ``"date"`` column.
+    n_folds : int
+        Number of CV folds to generate.
+
+    Returns
+    -------
+    list[tuple[pd.DataFrame, pd.DataFrame]]
+        List of (train, val) DataFrames for each fold.
+    """
+    dates = sorted(df["date"].unique())
+    n = len(dates)
+    gap = PREDICTION_HORIZON_DAYS
+
+    # Use first 85% for CV (same dates that time_split uses for train+val)
+    cv_end = int(n * (TRAIN_RATIO + VAL_RATIO))
+    cv_dates = dates[:cv_end]
+    n_cv = len(cv_dates)
+
+    # Divide into (n_folds + 1) chunks
+    chunk_size = n_cv // (n_folds + 1)
+
+    folds = []
+    for i in range(n_folds):
+        train_end = chunk_size * (i + 1)
+        val_start = train_end + gap
+        val_end = chunk_size * (i + 2)
+
+        if val_start >= n_cv:
+            break
+        val_end = min(val_end, n_cv)
+
+        train_set = set(cv_dates[:train_end])
+        val_set = set(cv_dates[val_start:val_end])
+
+        if not val_set:
+            break
+
+        folds.append((
+            df[df["date"].isin(train_set)],
+            df[df["date"].isin(val_set)],
+        ))
+
+    return folds
 
 
 # ---------------------------------------------------------------------------
@@ -187,33 +251,134 @@ def find_optimal_threshold(
 
 
 # ---------------------------------------------------------------------------
+# Hyperparameter tuning
+# ---------------------------------------------------------------------------
+
+HGBC_PARAM_SPACE = {
+    "learning_rate": [0.01, 0.03, 0.05, 0.08, 0.1],
+    "max_depth": [3, 4, 5, 6, 8, 10],
+    "min_samples_leaf": [10, 20, 30, 50, 100],
+    "l2_regularization": [0.0, 0.1, 1.0, 10.0],
+}
+
+N_TUNING_ITER = 15
+
+
+def tune_hgbc(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    folds: list[tuple[pd.DataFrame, pd.DataFrame]],
+) -> dict:
+    """Find best HGBC hyperparameters via randomized temporal CV search.
+
+    Samples ``N_TUNING_ITER`` random combinations from ``HGBC_PARAM_SPACE``,
+    evaluates each with the pre-computed temporal CV folds, and returns the
+    parameter dict with the highest mean-std F1 score.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full dataset (unused directly, kept for API consistency).
+    feature_cols : list[str]
+        Feature columns to train on.
+    folds : list[tuple[pd.DataFrame, pd.DataFrame]]
+        Pre-computed (train, val) temporal CV folds.
+
+    Returns
+    -------
+    dict
+        Best hyperparameter combination.
+    """
+    import random
+    rng = random.Random(42)
+
+    best_score = -1.0
+    best_params: dict = {}
+
+    logger.info("Tuning HGBC: %d random searches x %d folds ...", N_TUNING_ITER, len(folds))
+
+    for i in range(N_TUNING_ITER):
+        params = {k: rng.choice(v) for k, v in HGBC_PARAM_SPACE.items()}
+
+        template = HistGradientBoostingClassifier(
+            **params,
+            max_iter=500,
+            class_weight="balanced",
+            random_state=42,
+            early_stopping=True,
+            validation_fraction=0.1,
+            n_iter_no_change=15,
+        )
+
+        fold_f1s = []
+        for train_fold, val_fold in folds:
+            model = clone(template)
+            model.fit(
+                train_fold[feature_cols].values,
+                train_fold["label"].values,
+            )
+            y_prob = model.predict_proba(val_fold[feature_cols].values)[:, 1]
+            thr = find_optimal_threshold(val_fold["label"].values, y_prob)
+            met = evaluate_model(
+                model, val_fold[feature_cols].values,
+                val_fold["label"].values, thr,
+            )
+            fold_f1s.append(met["f1"])
+
+        score = float(np.mean(fold_f1s) - np.std(fold_f1s))
+
+        if score > best_score:
+            best_score = score
+            best_params = params
+            logger.info(
+                "  [%d/%d] New best: score=%.4f %s",
+                i + 1, N_TUNING_ITER, score, params,
+            )
+
+    logger.info("Best HGBC params (score=%.4f): %s", best_score, best_params)
+    return best_params
+
+
+# ---------------------------------------------------------------------------
 # Candidate models
 # ---------------------------------------------------------------------------
 
-def get_candidate_models() -> dict:
+def get_candidate_models(hgbc_params: dict | None = None) -> dict:
     """Return the candidate classifiers to compare.
 
     HistGradientBoosting handles NaN natively. The others are
     wrapped in a Pipeline with ``SimpleImputer(strategy="median")``
     to fill NaN fundamentals before fitting.
 
-    Note: GradientBoostingClassifier was removed because it cannot
-    be parallelized and takes hours on datasets with millions of rows.
-    HistGradientBoosting is its modern replacement (faster, handles NaN).
+    Parameters
+    ----------
+    hgbc_params : dict | None
+        If provided, override default HGBC hyperparameters with
+        tuned values from ``tune_hgbc``.
 
     Returns
     -------
     dict[str, estimator]
         Mapping of model name → sklearn-compatible estimator.
     """
+    hgbc_defaults = {
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "min_samples_leaf": 20,
+        "l2_regularization": 0.0,
+    }
+    if hgbc_params:
+        hgbc_defaults.update(hgbc_params)
+
     return {
         "HistGradientBoosting": HistGradientBoostingClassifier(
-            max_iter=300,
-            learning_rate=0.05,
-            max_depth=6,
-            min_samples_leaf=20,
+            **hgbc_defaults,
+            max_iter=500,
             class_weight="balanced",
             random_state=42,
+            early_stopping=True,
+            validation_fraction=0.1,
+            n_iter_no_change=15,
         ),
         "RandomForest": Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
@@ -290,7 +455,16 @@ def train_and_select(
     model_path,
     threshold_path,
 ) -> dict:
-    """Train all candidates, optimize thresholds, select best, save.
+    """Train candidates with temporal CV, select best, retrain, save.
+
+    Two-phase approach:
+        1. **CV phase**: expanding-window temporal cross-validation across
+           ``N_CV_FOLDS`` folds to compute a robust average F1 per model.
+           The model with the highest mean CV F1 is selected.
+        2. **Final phase**: all models are retrained on the full training
+           split (70%), thresholds optimized on validation (15%), and
+           evaluated on the held-out test set (15%).  The winner from
+           phase 1 is saved.
 
     Parameters
     ----------
@@ -310,11 +484,57 @@ def train_and_select(
         ``{"best_model": name, "best_threshold": float, "results": [...]}``.
     """
     # ------------------------------------------------------------------
-    # Split
+    # Phase 0: Hyperparameter tuning for HGBC
+    # ------------------------------------------------------------------
+    folds = time_series_cv_splits(df)
+    logger.info("Temporal CV: %d folds", len(folds))
+    for i, (tr, va) in enumerate(folds):
+        logger.info("  Fold %d: train=%d, val=%d", i + 1, len(tr), len(va))
+
+    hgbc_params = tune_hgbc(df, feature_cols, folds)
+    candidates = get_candidate_models(hgbc_params=hgbc_params)
+
+    # ------------------------------------------------------------------
+    # Phase 1: Temporal CV for model selection
+    # ------------------------------------------------------------------
+    cv_scores: dict[str, float] = {}
+
+    for name, template in candidates.items():
+        logger.info("CV: %s ...", name)
+        fold_f1s = []
+        for train_fold, val_fold in folds:
+            model = clone(template)
+            model.fit(
+                train_fold[feature_cols].values,
+                train_fold["label"].values,
+            )
+            y_prob = model.predict_proba(val_fold[feature_cols].values)[:, 1]
+            thr = find_optimal_threshold(val_fold["label"].values, y_prob)
+            met = evaluate_model(
+                model, val_fold[feature_cols].values,
+                val_fold["label"].values, thr,
+            )
+            fold_f1s.append(met["f1"])
+
+        avg_f1 = float(np.mean(fold_f1s))
+        std_f1 = float(np.std(fold_f1s))
+        # Penalize instability: mean - std favors consistent models
+        score = avg_f1 - std_f1
+        cv_scores[name] = score
+        logger.info(
+            "  %s — CV score=%.4f (mean=%.4f - std=%.4f) folds=%s",
+            name, score, avg_f1, std_f1, [round(f, 4) for f in fold_f1s],
+        )
+
+    best_name = max(cv_scores, key=cv_scores.get)
+    logger.info("CV winner: %s (score=%.4f)", best_name, cv_scores[best_name])
+
+    # ------------------------------------------------------------------
+    # Phase 2: Final train/val/test — all models for comparison
     # ------------------------------------------------------------------
     train, val, test = time_split(df)
     logger.info(
-        "Split sizes — train: %d, val: %d, test: %d",
+        "Final split — train: %d, val: %d, test: %d",
         len(train), len(val), len(test),
     )
 
@@ -325,19 +545,13 @@ def train_and_select(
     X_test = test[feature_cols].values
     y_test = test["label"].values
 
-    # ------------------------------------------------------------------
-    # Train and evaluate each candidate
-    # ------------------------------------------------------------------
     results: list[dict] = []
-    best_f1 = -1.0
-    best_model = None
-    best_threshold = 0.5
-    best_name = ""
+    trained_models: dict = {}
+    trained_thresholds: dict[str, float] = {}
 
-    candidates = get_candidate_models()
-
-    for name, model in candidates.items():
-        logger.info("Training %s ...", name)
+    for name, template in candidates.items():
+        logger.info("Training %s (final) ...", name)
+        model = clone(template)
         model.fit(X_train, y_train)
 
         # Optimal threshold on validation set
@@ -357,25 +571,24 @@ def train_and_select(
         results.append(val_metrics)
         results.append(test_metrics)
 
+        trained_models[name] = model
+        trained_thresholds[name] = threshold
+
         logger.info(
-            "  %s — val F1=%.4f | test F1=%.4f | threshold=%.4f | AUC=%.4f",
-            name, val_metrics["f1"], test_metrics["f1"],
-            threshold, val_metrics["roc_auc"],
+            "  %s — CV F1=%.4f | val F1=%.4f | test F1=%.4f | threshold=%.4f | AUC=%.4f",
+            name, cv_scores.get(name, 0), val_metrics["f1"], test_metrics["f1"],
+            threshold, test_metrics["roc_auc"],
         )
 
-        # Track best by validation F1
-        if val_metrics["f1"] > best_f1:
-            best_f1 = val_metrics["f1"]
-            best_model = model
-            best_threshold = threshold
-            best_name = name
+    # ------------------------------------------------------------------
+    # Save CV winner
+    # ------------------------------------------------------------------
+    best_model = trained_models[best_name]
+    best_threshold = trained_thresholds[best_name]
 
-    # ------------------------------------------------------------------
-    # Save best model + threshold
-    # ------------------------------------------------------------------
     logger.info(
-        "Winner: %s (val F1=%.4f, threshold=%.4f)",
-        best_name, best_f1, best_threshold,
+        "Winner: %s (CV F1=%.4f, threshold=%.4f)",
+        best_name, cv_scores[best_name], best_threshold,
     )
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
