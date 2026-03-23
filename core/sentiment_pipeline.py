@@ -141,6 +141,17 @@ def aggregate_daily_sentiment(
 ) -> pd.DataFrame:
     """Aggregate headline-level scores to daily ticker-level features.
 
+    Before aggregation, each headline date is mapped to the **next
+    trading day it would impact**:
+        - Weekday news (Mon-Fri) → impacts next business day
+          (the +1 BDay lag is applied later in merge_sentiment_pit)
+        - Weekend news (Sat/Sun) → mapped to Monday before aggregation
+          so that Saturday and Sunday news are combined with Monday's
+          headlines for a unified daily score
+
+    This ensures weekend/holiday news is correctly attributed to the
+    first trading day when the market can react.
+
     Parameters
     ----------
     headlines_df : pd.DataFrame
@@ -155,6 +166,12 @@ def aggregate_daily_sentiment(
     """
     df = headlines_df.copy()
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+
+    # Map weekend dates to the next Monday (next trading day)
+    # Saturday (dayofweek=5) → +2 days, Sunday (dayofweek=6) → +1 day
+    dow = df["date"].dt.dayofweek
+    df.loc[dow == 5, "date"] += pd.Timedelta(days=2)  # Sat → Mon
+    df.loc[dow == 6, "date"] += pd.Timedelta(days=1)  # Sun → Mon
 
     agg = df.groupby(["ticker", "date"]).agg(
         sentiment_mean=("sentiment_score", "mean"),

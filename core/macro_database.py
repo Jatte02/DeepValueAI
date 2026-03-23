@@ -154,6 +154,15 @@ def _build_macro_features(
 ) -> pd.DataFrame:
     """Compute derived macro features from raw FRED series.
 
+    Each series is stored as its own rows with ``release_date`` being
+    the point-in-time date when the data was first published.  Different
+    series have different release cadences (daily / monthly / quarterly),
+    so they are stored **independently** and merged into prices one at a
+    time inside ``merge_macro_pit``.
+
+    The DataFrame contains one row per (series, release_date) combination.
+    A ``feature`` column identifies which series the row belongs to.
+
     Parameters
     ----------
     series_data : dict
@@ -163,61 +172,84 @@ def _build_macro_features(
     Returns
     -------
     pd.DataFrame
-        Daily macro features with ``date`` and ``release_date`` columns.
+        Columns: ``release_date``, ``feature``, ``value``.
+        Each row is one observation with its PIT release date.
     """
-    features: list[pd.DataFrame] = []
+    rows: list[pd.DataFrame] = []
 
     # --- Federal Funds Rate (DFF) ---
     if "DFF" in series_data:
         dff = series_data["DFF"].copy()
-        dff = dff.rename(columns={"value": "fed_rate"})
-        dff["release_date"] = dff["realtime_start"]
-        # 3-month change (approx 63 trading days for daily data)
         dff = dff.sort_values("date")
-        dff["fed_rate_change_3m"] = dff["fed_rate"].diff(periods=63)
-        features.append(dff[["date", "release_date", "fed_rate", "fed_rate_change_3m"]])
+        # fed_rate: raw value
+        fr = pd.DataFrame({
+            "release_date": dff["realtime_start"].values,
+            "feature": "fed_rate",
+            "value": dff["value"].values,
+        })
+        rows.append(fr)
+        # fed_rate_change_3m: 63 trading-day diff
+        change = dff["value"].diff(periods=63)
+        valid = change.notna()
+        fc = pd.DataFrame({
+            "release_date": dff.loc[valid, "realtime_start"].values,
+            "feature": "fed_rate_change_3m",
+            "value": change[valid].values,
+        })
+        rows.append(fc)
 
     # --- Unemployment (UNRATE) ---
     if "UNRATE" in series_data:
         unrate = series_data["UNRATE"].copy()
-        unrate = unrate.rename(columns={"value": "unemployment"})
-        unrate["release_date"] = unrate["realtime_start"]
         unrate = unrate.sort_values("date")
+        ur = pd.DataFrame({
+            "release_date": unrate["realtime_start"].values,
+            "feature": "unemployment",
+            "value": unrate["value"].values,
+        })
+        rows.append(ur)
         # 3-month trend (3 monthly observations)
-        unrate["unemployment_trend"] = unrate["unemployment"].diff(periods=3)
-        features.append(
-            unrate[["date", "release_date", "unemployment", "unemployment_trend"]]
-        )
+        trend = unrate["value"].diff(periods=3)
+        valid = trend.notna()
+        ut = pd.DataFrame({
+            "release_date": unrate.loc[valid, "realtime_start"].values,
+            "feature": "unemployment_trend",
+            "value": trend[valid].values,
+        })
+        rows.append(ut)
 
     # --- GDP Growth (GDP) ---
     if "GDP" in series_data:
         gdp = series_data["GDP"].copy()
         gdp = gdp.sort_values("date")
-        gdp["release_date"] = gdp["realtime_start"]
-        # Quarter-over-quarter growth rate
-        gdp["gdp_growth"] = gdp["value"].pct_change()
-        features.append(gdp[["date", "release_date", "gdp_growth"]])
+        growth = gdp["value"].pct_change()
+        valid = growth.notna()
+        gg = pd.DataFrame({
+            "release_date": gdp.loc[valid, "realtime_start"].values,
+            "feature": "gdp_growth",
+            "value": growth[valid].values,
+        })
+        rows.append(gg)
 
     # --- CPI Year-over-Year (CPIAUCSL) ---
     if "CPIAUCSL" in series_data:
         cpi = series_data["CPIAUCSL"].copy()
         cpi = cpi.sort_values("date")
-        cpi["release_date"] = cpi["realtime_start"]
-        # YoY inflation (12 monthly observations)
-        cpi["cpi_yoy"] = cpi["value"].pct_change(periods=12)
-        features.append(cpi[["date", "release_date", "cpi_yoy"]])
+        yoy = cpi["value"].pct_change(periods=12)
+        valid = yoy.notna()
+        cy = pd.DataFrame({
+            "release_date": cpi.loc[valid, "realtime_start"].values,
+            "feature": "cpi_yoy",
+            "value": yoy[valid].values,
+        })
+        rows.append(cy)
 
-    if not features:
+    if not rows:
         raise RuntimeError("No macro features could be computed.")
 
-    # Merge all features on date using outer join
-    result = features[0]
-    for f in features[1:]:
-        result = pd.merge(result, f, on=["date", "release_date"], how="outer")
-
-    result = result.sort_values("date").reset_index(drop=True)
-    result["date"] = pd.to_datetime(result["date"])
+    result = pd.concat(rows, ignore_index=True)
     result["release_date"] = pd.to_datetime(result["release_date"])
+    result = result.sort_values("release_date").reset_index(drop=True)
 
     return result
 
@@ -256,19 +288,24 @@ def merge_macro_pit(
 ) -> pd.DataFrame:
     """Merge daily prices with the most recent available macro data.
 
-    Uses ``release_date`` for PIT safety: a macro reading released
-    on 2023-04-27 is only available from that date onward.
+    Each macro feature is merged independently using its own
+    ``release_date`` as the PIT key.  This is necessary because
+    different series have different release cadences:
+        - DFF: daily (same-day release)
+        - UNRATE: monthly (~5 day publication lag)
+        - GDP: quarterly (~30 day lag)
+        - CPIAUCSL: monthly (~13 day lag)
 
-    For each macro feature, performs a backward ``merge_asof`` on
-    ``release_date``, then forward-fills (economically correct:
-    unemployment is 4.2% until the next release says otherwise).
+    A backward ``merge_asof`` on ``release_date`` means a value
+    published on 2023-04-27 is only "visible" from that date onward.
 
     Parameters
     ----------
     prices_df : pd.DataFrame
         Must have a ``date`` column.
     macro_df : pd.DataFrame or None
-        Macro features. If None, loads from default path.
+        Long-format macro features (columns: release_date, feature, value).
+        If None, loads from default path.
 
     Returns
     -------
@@ -280,38 +317,32 @@ def merge_macro_pit(
 
     prices = prices_df.copy()
     prices["date"] = pd.to_datetime(prices["date"]).dt.as_unit("ns")
-
-    macro = macro_df.copy()
-    macro["date"] = pd.to_datetime(macro["date"]).dt.as_unit("ns")
-    macro["release_date"] = pd.to_datetime(macro["release_date"]).dt.as_unit("ns")
-
-    # Use release_date as the PIT key
-    macro_cols = [
-        "fed_rate", "fed_rate_change_3m",
-        "unemployment", "unemployment_trend",
-        "gdp_growth", "cpi_yoy",
-    ]
-    existing_cols = [c for c in macro_cols if c in macro.columns]
-    macro_slim = macro[["release_date"] + existing_cols].copy()
-    macro_slim = macro_slim.dropna(subset=existing_cols, how="all")
-    macro_slim = macro_slim.sort_values("release_date")
-    macro_slim = macro_slim.drop_duplicates(subset=["release_date"], keep="last")
-
     prices = prices.sort_values("date")
 
-    merged = pd.merge_asof(
-        prices,
-        macro_slim,
-        left_on="date",
-        right_on="release_date",
-        direction="backward",
-    )
+    macro = macro_df.copy()
+    macro["release_date"] = pd.to_datetime(macro["release_date"]).dt.as_unit("ns")
 
-    # Drop the release_date column (not needed downstream)
-    if "release_date" in merged.columns:
-        merged.drop(columns="release_date", inplace=True)
+    # Merge each feature independently (each has its own release dates)
+    feature_names = macro["feature"].unique()
+    for feat_name in feature_names:
+        feat_data = macro[macro["feature"] == feat_name][["release_date", "value"]].copy()
+        feat_data = feat_data.dropna(subset=["value"])
+        feat_data = feat_data.sort_values("release_date")
+        feat_data = feat_data.drop_duplicates(subset=["release_date"], keep="last")
+        feat_data = feat_data.rename(columns={"value": feat_name})
 
-    return merged
+        prices = pd.merge_asof(
+            prices,
+            feat_data,
+            left_on="date",
+            right_on="release_date",
+            direction="backward",
+        )
+        # Drop release_date if merge_asof added it
+        if "release_date" in prices.columns:
+            prices.drop(columns="release_date", inplace=True)
+
+    return prices
 
 
 # ---------------------------------------------------------------------------
@@ -340,9 +371,10 @@ def main() -> None:
     df = download_fred(api_key=api_key)
     save_macro(df)
 
+    features = df["feature"].unique().tolist()
     logger.info(
         "Macro database built: %d rows, features: %s",
-        len(df), [c for c in df.columns if c not in ("date", "release_date")],
+        len(df), features,
     )
 
 
