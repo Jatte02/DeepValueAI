@@ -12,7 +12,7 @@ and Machine Learning to identify investment opportunities with
 high probability of medium-term appreciation.
 
 The system scans **~3,600 US stocks** (full SimFin universe) using
-**34 features** across 5 categories and **10 years** of historical data
+**34 features** across 5 categories and **5 years** of historical data
 with strict point-in-time safety to prevent look-ahead bias.
 
 ---
@@ -20,7 +20,7 @@ with strict point-in-time safety to prevent look-ahead bias.
 ## Features
 
 - **Individual Analyzer** — Deep audit of any company: fundamental, technical, and real-time AI prediction.
-- **Visual Backtesting** — Historical simulator applying the hybrid strategy (AI + Technical Filter) over 10 years.
+- **Visual Backtesting** — Historical simulator applying the hybrid strategy (AI + Technical Filter) over 5 years.
 - **S&P 500 Screener** — Mass scanner filtering companies that meet quality and probability criteria.
 
 ---

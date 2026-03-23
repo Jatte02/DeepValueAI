@@ -1,7 +1,7 @@
 """
 Historical ETL pipeline — build the training dataset from scratch.
 
-Downloads 10 years of daily OHLCV data for all tickers in the SimFin
+Downloads daily OHLCV data for all tickers in the SimFin
 universe (~3,600), computes the 34 features defined in config.py,
 generates forward-looking binary labels, and saves a single CSV ready
 for model training.
@@ -33,6 +33,7 @@ import pandas as pd
 
 from core.config import (
     FEATURE_COLUMNS,
+    FUNDAMENTAL_FEATURES,
     MIN_RETURN_TARGET,
     PATHS,
     PREDICTION_HORIZON_DAYS,
@@ -118,7 +119,7 @@ def generate_dataset() -> pd.DataFrame:
 
     The full pipeline:
         1. Get ticker list from SimFin fundamentals (fallback: S&P 500).
-        2. Download 10 years of daily OHLCV for all tickers + ^GSPC + ^VIX.
+        2. Download daily OHLCV for all tickers + ^GSPC + ^VIX.
         3. Per ticker: compute 11 technical + 4 VIX features, create labels.
         4. Concatenate and merge:
            a. Historical fundamentals (8 features, publish_date PIT)
@@ -237,6 +238,18 @@ def generate_dataset() -> pd.DataFrame:
     # 4a. Historical fundamentals (8 features)
     logger.info("Merging historical fundamentals (point-in-time)...")
     dataset = merge_fundamentals_pit(dataset)
+
+    # 4a.1 Keep only rows with fundamental coverage.
+    # SimFin free tier only has ~5 years of data (from ~2020). Rows without
+    # any fundamental feature are from before that period and would train
+    # the model on incomplete data, diluting quality.
+    pre_filter = len(dataset)
+    has_fundamentals = dataset[FUNDAMENTAL_FEATURES].notna().any(axis=1)
+    dataset = dataset[has_fundamentals].copy()
+    logger.info(
+        "Fundamental coverage filter: %d -> %d rows (%d dropped, no fundamentals).",
+        pre_filter, len(dataset), pre_filter - len(dataset),
+    )
 
     # 4b. FRED macro data (6 features)
     try:

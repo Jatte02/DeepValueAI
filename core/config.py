@@ -183,7 +183,7 @@ MIN_RETURN_TARGET = 0.10         # Target: stock rises at least 10%
 # Data download
 # ---------------------------------------------------------------------------
 
-DOWNLOAD_PERIOD = "10y"
+DOWNLOAD_PERIOD = "7y"           # 5 years of training data + 2 years warmup for SMA-200
 DOWNLOAD_INTERVAL = "1d"
 SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 SP500_MARKET_TICKER = "^GSPC"
