@@ -8,39 +8,38 @@ authors = [{name = "Giancarlos Estévez"}]
 readme = "README.md"
 
 # ---------------------------------------------------------------
-# Dependencias de PRODUCCIÓN
-# Estas son las librerías que la aplicación necesita para correr.
-# Solo listamos las que importamos directamente en nuestro código.
-# pip resuelve las sub-dependencias automáticamente.
+# Production dependencies
+# Libraries the application needs to run.
+# Only direct imports are listed — pip resolves sub-dependencies.
 # ---------------------------------------------------------------
 dependencies = [
-    "streamlit>=1.30",          # Dashboard web interactivo
-    "pandas>=2.0",              # Manipulación de datos tabulares
-    "numpy>=1.24",              # Operaciones numéricas
-    "yfinance>=0.2.30",         # API de Yahoo Finance
-    "pandas-ta>=0.3.14b1",      # Indicadores técnicos (SMA, Williams %R)
-    "scikit-learn>=1.3",        # Framework ML: interfaz estándar para todos los modelos
-    "matplotlib>=3.7",          # Gráficos estáticos
-    "seaborn>=0.13",            # Gráficos estadísticos (confusion matrix)
-    "plotly>=5.18",             # Gráficos interactivos (dashboard Streamlit)
-    "joblib>=1.3",              # Serialización de modelos (.pkl)
+    "streamlit>=1.30",          # Interactive web dashboard
+    "pandas>=2.0",              # Tabular data manipulation
+    "numpy>=1.24",              # Numerical operations
+    "yfinance>=0.2.30",         # Yahoo Finance API
+    "pandas-ta>=0.3.14b1",      # Technical indicators (SMA, Williams %R)
+    "scikit-learn>=1.3",        # ML framework: standard interface for all models
+    "matplotlib>=3.7",          # Static charts
+    "seaborn>=0.13",            # Statistical charts (confusion matrix)
+    "plotly>=5.18",             # Interactive charts (Streamlit dashboard)
+    "joblib>=1.3",              # Model serialization (.pkl)
     "simfin>=0.9",              # Historical fundamental data (SimFin bulk downloads)
     "pyarrow>=14.0",            # Parquet file format (fast, compressed storage)
-    "beautifulsoup4>=4.12",     # Parsing HTML (lista S&P 500)
+    "beautifulsoup4>=4.12",     # HTML parsing (S&P 500 ticker list)
     "requests>=2.31",           # HTTP requests
-    "lxml>=4.9",                # Parser XML para pandas.read_html
+    "lxml>=4.9",                # XML parser for pandas.read_html
     "fredapi>=0.5",             # FRED (Federal Reserve Economic Data) API
 ]
 
 # ---------------------------------------------------------------
-# Dependencias de DESARROLLO
-# Solo se instalan si haces: pip install -e ".[dev]"
-# No se necesitan en producción.
+# Development dependencies
+# Installed only with: pip install -e ".[dev]"
+# Not needed in production.
 # ---------------------------------------------------------------
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",              # Testing framework
-    "ruff>=0.4",                # Linter + formateador (reemplaza flake8 + black)
+    "ruff>=0.4",                # Linter + formatter (replaces flake8 + black)
 ]
 nlp = [
     "transformers>=4.30",       # HuggingFace Transformers (FinBERT)
@@ -48,28 +47,28 @@ nlp = [
 ]
 
 # ---------------------------------------------------------------
-# Configuración de Ruff (linter)
+# Ruff configuration (linter)
 # ---------------------------------------------------------------
 [tool.setuptools.packages.find]
 include = ["core*", "ml_pipeline*", "app*"]
 
 [tool.ruff]
-target-version = "py310"        # Asume Python 3.10+
-line-length = 100               # Máximo 100 caracteres por línea
+target-version = "py310"        # Assumes Python 3.10+
+line-length = 100               # Maximum 100 characters per line
 
 [tool.ruff.lint]
 select = [
-    "E",    # Errores de estilo (pycodestyle)
-    "F",    # Errores lógicos (pyflakes)
-    "I",    # Orden de imports (isort)
-    "UP",   # Modernización de sintaxis (pyupgrade)
-    "B",    # Bugs comunes (flake8-bugbear)
-    "SIM",  # Simplificaciones (flake8-simplify)
+    "E",    # Style errors (pycodestyle)
+    "F",    # Logical errors (pyflakes)
+    "I",    # Import ordering (isort)
+    "UP",   # Syntax modernization (pyupgrade)
+    "B",    # Common bugs (flake8-bugbear)
+    "SIM",  # Simplifications (flake8-simplify)
 ]
 
 # ---------------------------------------------------------------
-# Configuración de Pytest
+# Pytest configuration
 # ---------------------------------------------------------------
 [tool.pytest.ini_options]
-testpaths = ["tests"]           # Dónde buscar tests
-pythonpath = ["."]              # Para que los imports funcionen desde la raíz
+testpaths = ["tests"]           # Where to find tests
+pythonpath = ["."]              # So imports work from project root

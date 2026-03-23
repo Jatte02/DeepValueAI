@@ -5,7 +5,7 @@ Trains four sklearn classifiers on the generated dataset, optimizes the
 classification threshold for each via precision-recall analysis, selects
 the best model by validation F1, and saves all artifacts:
 
-    models/best_model.pkl               — unified model (19 features)
+    models/best_model.pkl               — unified model (34 features)
     models/optimal_threshold.txt        — optimal threshold
     models/model_comparison.csv         — metrics for every model x split
 
@@ -30,11 +30,12 @@ MODELS COMPARED:
     without any preprocessing.
 
 UNIFIED MODEL:
-    A single model with all 19 features (11 technical + 8 fundamental)
-    is used for both real-time screening and historical backtesting.
-    This is possible because the training dataset now uses point-in-time
-    historical fundamentals (from core.fundamental_database) instead of
-    broadcasting today's snapshot to all rows. No look-ahead bias.
+    A single model with all 34 features (11 technical + 8 fundamental +
+    4 VIX + 6 macro + 5 sentiment) is used for both real-time screening
+    and historical backtesting. This is possible because the training
+    dataset uses point-in-time data from all sources (publish_date for
+    fundamentals, realtime_start for FRED, 1-day lag for sentiment).
+    No look-ahead bias.
 
 Usage:
     python -m ml_pipeline.train_model
@@ -403,12 +404,12 @@ def train_and_select(
 # ---------------------------------------------------------------------------
 
 def train_models() -> None:
-    """Train a unified model with all 19 features and save artifacts.
+    """Train a unified model with all 34 features and save artifacts.
 
-    With point-in-time historical fundamentals, a single model serves
-    both real-time screening and backtesting without look-ahead bias.
-    The model is saved to both production and backtest paths for
-    backward compatibility.
+    With point-in-time data from all sources (fundamentals, macro,
+    sentiment), a single model serves both real-time screening and
+    backtesting without look-ahead bias. The model is saved to both
+    production and backtest paths for backward compatibility.
     """
     import shutil
 
@@ -436,10 +437,10 @@ def train_models() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Unified model — 19 features (technical + fundamental)
+    # Unified model — 34 features (technical + fundamental + VIX + macro + sentiment)
     # ------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("TRAINING UNIFIED MODEL (19 features)")
+    logger.info("TRAINING UNIFIED MODEL (34 features)")
     logger.info("=" * 60)
 
     results = train_and_select(
@@ -460,7 +461,7 @@ def train_models() -> None:
     # Save comparison table
     # ------------------------------------------------------------------
     comparison = pd.DataFrame(results["results"])
-    comparison["variant"] = "unified_19feat"
+    comparison["variant"] = "unified_34feat"
     comparison_path = PATHS["comparison_file"]
     comparison.to_csv(comparison_path, index=False)
     logger.info("Comparison table saved -> %s", comparison_path)

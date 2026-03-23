@@ -23,7 +23,7 @@ DESIGN DECISIONS:
        know or care which one was selected during training.
 
     3. Feature validation happens HERE, not in the caller. Before
-       predicting, we verify the DataFrame has exactly the 19 columns
+       predicting, we verify the DataFrame has exactly the 34 columns
        the model expects, in the correct order. This catches silent
        bugs where a feature was renamed or dropped upstream.
 """
@@ -232,9 +232,7 @@ def predict_proba(
         ``predict_proba`` method.
     feature_list : list[str] | None
         Which feature columns to extract and in what order.
-        Defaults to ``config.FEATURE_COLUMNS`` (19 features).
-        Pass ``config.TECHNICAL_FEATURES`` (11 features) for the
-        backtest model, which was trained without fundamentals.
+        Defaults to ``config.FEATURE_COLUMNS`` (34 features).
 
     Returns
     -------
