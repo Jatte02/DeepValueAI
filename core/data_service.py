@@ -351,7 +351,10 @@ def compute_technical_features(
     # (Close - SMA_200) / SMA_200 → percentage distance.
     # Negative = price below SMA (potential value), positive = above.
     sma = ta.sma(close=df["Close"], length=SMA_LENGTH)
-    df["sma_200"] = sma 
+    if sma is None:
+        # Not enough data for SMA — fill with NaN so downstream dropna skips this ticker
+        sma = pd.Series(np.nan, index=df.index)
+    df["sma_200"] = sma
     df["sma_distance"] = (df["Close"] - sma) / sma
 
     # --- 7. Price vs SMA Trend (is price approaching or leaving SMA?) ---
