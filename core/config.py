@@ -37,6 +37,8 @@ PATHS = {
     "comparison_file": PROJECT_ROOT / "models" / "model_comparison.csv",
     "backtest_model_file": PROJECT_ROOT / "models" / "best_model_backtest.pkl",
     "backtest_threshold_file": PROJECT_ROOT / "models" / "optimal_threshold_backtest.txt",
+    "fundamentals_dir": PROJECT_ROOT / "data" / "fundamentals",
+    "fundamentals_file": PROJECT_ROOT / "data" / "fundamentals" / "fundamentals_features.parquet",
 }
 
 
