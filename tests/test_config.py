@@ -9,6 +9,7 @@ from core.config import (
     DOWNLOAD_PERIOD,
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
+    MACRO_FEATURES,
     MAX_HOLDING_DAYS,
     MAX_OPEN_POSITIONS,
     MAX_TICKER_EXPOSURE_PCT,
@@ -17,11 +18,13 @@ from core.config import (
     PATHS,
     POSITION_SIZE_PCT,
     PROJECT_ROOT,
+    SENTIMENT_FEATURES,
     SMA_BUY_CEILING,
     STOP_LOSS_PCT,
     TECHNICAL_FEATURES,
     TRAILING_STOP_ACTIVATION_PCT,
     TRAILING_STOP_PCT,
+    VIX_FEATURES,
     setup_logging,
 )
 
@@ -62,6 +65,8 @@ class TestPaths:
             "dataset_file", "comparison_file",
             "backtest_model_file", "backtest_threshold_file",
             "fundamentals_dir", "fundamentals_file",
+            "macro_dir", "macro_file",
+            "news_dir", "news_raw_file", "sentiment_file",
         }
         assert expected == set(PATHS.keys())
 
@@ -77,11 +82,23 @@ class TestFeatures:
     def test_fundamental_features_count(self):
         assert len(FUNDAMENTAL_FEATURES) == 8
 
+    def test_vix_features_count(self):
+        assert len(VIX_FEATURES) == 4
+
+    def test_macro_features_count(self):
+        assert len(MACRO_FEATURES) == 6
+
+    def test_sentiment_features_count(self):
+        assert len(SENTIMENT_FEATURES) == 5
+
     def test_feature_columns_is_concatenation(self):
-        assert FEATURE_COLUMNS == TECHNICAL_FEATURES + FUNDAMENTAL_FEATURES
+        assert FEATURE_COLUMNS == (
+            TECHNICAL_FEATURES + FUNDAMENTAL_FEATURES
+            + VIX_FEATURES + MACRO_FEATURES + SENTIMENT_FEATURES
+        )
 
     def test_feature_columns_total(self):
-        assert len(FEATURE_COLUMNS) == 19
+        assert len(FEATURE_COLUMNS) == 34
 
     def test_no_duplicate_features(self):
         assert len(set(FEATURE_COLUMNS)) == len(FEATURE_COLUMNS)
@@ -93,6 +110,18 @@ class TestFeatures:
     def test_key_fundamental_features_present(self):
         for feat in ("pe_ratio", "peg_ratio", "fcf_yield", "debt_equity"):
             assert feat in FUNDAMENTAL_FEATURES
+
+    def test_key_vix_features_present(self):
+        for feat in ("vix_level", "vix_regime"):
+            assert feat in VIX_FEATURES
+
+    def test_key_macro_features_present(self):
+        for feat in ("fed_rate", "unemployment", "cpi_yoy"):
+            assert feat in MACRO_FEATURES
+
+    def test_key_sentiment_features_present(self):
+        for feat in ("sentiment_mean", "news_volume"):
+            assert feat in SENTIMENT_FEATURES
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 """
-S&P 500 opportunity screener.
+US stock opportunity screener.
 
-This module scans all S&P 500 constituents in real time, runs the
-production model (19 features: technical + fundamental), and returns
-a ranked table of investment opportunities with metadata.
+This module scans stocks in real time, runs the production model
+(34 features: technical + VIX + fundamental + macro + sentiment),
+and returns a ranked table of investment opportunities with metadata.
 
 For each ticker the screener computes:
     - Model probability and binary buy signal
@@ -14,8 +14,8 @@ For each ticker the screener computes:
 
 DESIGN PRINCIPLE:
     The screener does NOT manage a portfolio or simulate trades.
-    It answers one question: "Which S&P 500 stocks does the model
-    like RIGHT NOW, and how confident is it?"
+    It answers one question: "Which stocks does the model like RIGHT
+    NOW, and how confident is it?"
 
     Portfolio constraints (position sizing, cooldown, exposure limits)
     are the UI layer's concern — the screener provides raw rankings.
@@ -34,6 +34,8 @@ from .config import (
     FUNDAMENTAL_FEATURES,
     SMA_BUY_CEILING,
     PATHS,
+    SP500_MARKET_TICKER,
+    VIX_TICKER,
 )
 from .data_service import (
     build_feature_row,
@@ -184,6 +186,7 @@ def _analyze_ticker(
     model,
     threshold: float,
     feature_list: list[str],
+    vix_df: pd.DataFrame | None = None,
 ) -> dict | None:
     """Run full analysis on a single ticker and return a result row.
 
@@ -205,6 +208,8 @@ def _analyze_ticker(
         Probability threshold for buy signal.
     feature_list : list[str]
         Feature columns the model expects.
+    vix_df : pd.DataFrame | None
+        VIX OHLCV data for VIX features.
 
     Returns
     -------
@@ -213,14 +218,12 @@ def _analyze_ticker(
         ticker could not be analyzed.
     """
     # ------------------------------------------------------------------
-    # Step 1: Build features (11 technical + 8 fundamental).
-    # build_feature_row already handles:
-    #   - Technical indicator computation
-    #   - Fundamental data fetching from Yahoo
-    #   - Dropping warmup rows (first ~200 rows with NaN technicals)
+    # Step 1: Build features (11 technical + 4 VIX + 8 fundamental).
+    # build_feature_row handles technical + fundamental.
+    # VIX features are added via compute_technical_features(vix_df=...).
     # ------------------------------------------------------------------
     try:
-        df = build_feature_row(ticker, ohlcv_df, market_df=market_df)
+        df = build_feature_row(ticker, ohlcv_df, market_df=market_df, vix_df=vix_df)
     except Exception as exc:
         logger.warning("Feature engineering failed for %s: %s", ticker, exc)
         return None
@@ -367,13 +370,12 @@ def scan_sp500(
     threshold = load_threshold(_threshold_path)
     logger.info("Model loaded. Threshold: %.4f", threshold)
 
-    feature_list = FEATURE_COLUMNS  # 19 features for production model
+    feature_list = FEATURE_COLUMNS  # 34 features for production model
 
     # ------------------------------------------------------------------
     # Step 2: Get ticker list.
     # If no custom list is provided, download the full S&P 500.
-    # We always add the market index (^GSPC) for the market_trend
-    # feature, but we DON'T scan it — it's not a tradeable stock.
+    # We always add the market index and VIX but DON'T scan them.
     # ------------------------------------------------------------------
     if tickers is None:
         tickers = get_sp500_tickers()
@@ -382,27 +384,30 @@ def scan_sp500(
         logger.info("Using custom ticker list: %d tickers.", len(tickers))
 
     # ------------------------------------------------------------------
-    # Step 3: Download OHLCV data for all tickers + market index.
-    # We download everything in one batch call to download_ohlcv.
-    # The market index is included in the download but processed
-    # separately — it's needed for compute_technical_features but
-    # is not itself a screener candidate.
+    # Step 3: Download OHLCV data for all tickers + market index + VIX.
     # ------------------------------------------------------------------
     all_symbols = tickers.copy()
-    market_ticker = "^GSPC"
-    if market_ticker not in all_symbols:
-        all_symbols.append(market_ticker)
+    for ref_ticker in [SP500_MARKET_TICKER, VIX_TICKER]:
+        if ref_ticker not in all_symbols:
+            all_symbols.append(ref_ticker)
 
     logger.info("Downloading OHLCV data for %d symbols...", len(all_symbols))
     ohlcv_data = download_ohlcv(all_symbols)
 
-    # Extract market data and remove it from the scan pool.
-    market_df = ohlcv_data.pop(market_ticker, None)
+    # Extract market and VIX data, remove from scan pool.
+    market_df = ohlcv_data.pop(SP500_MARKET_TICKER, None)
     if market_df is None:
         logger.warning(
             "Could not download market index (%s). "
             "market_trend feature will be NaN for all tickers.",
-            market_ticker,
+            SP500_MARKET_TICKER,
+        )
+
+    vix_df = ohlcv_data.pop(VIX_TICKER, None)
+    if vix_df is None:
+        logger.warning(
+            "Could not download VIX (%s). VIX features will be NaN.",
+            VIX_TICKER,
         )
 
     # ------------------------------------------------------------------
@@ -426,6 +431,7 @@ def scan_sp500(
             model=model,
             threshold=threshold,
             feature_list=feature_list,
+            vix_df=vix_df,
         )
 
         if row is not None:

@@ -7,11 +7,11 @@ checking exit conditions on open positions first, then evaluating
 entry signals for new buys.
 
 LOOK-AHEAD BIAS PREVENTION:
-    This engine uses the unified 19-feature model (technical +
-    fundamental). Fundamental features are merged point-in-time from
-    the historical fundamental database using publish_date, so each
-    day only sees fundamentals that were actually filed before that
-    date. No look-ahead bias.
+    This engine uses the unified 34-feature model (technical + VIX +
+    fundamental + macro + sentiment). All data sources are merged
+    point-in-time: fundamentals via publish_date, macro via
+    release_date, and sentiment with a 1-day lag. Each day only sees
+    data that was actually available before that date. No look-ahead bias.
 
 ARCHITECTURE:
     Three layers, each with a single responsibility:
@@ -60,6 +60,7 @@ from .config import (
     TECHNICAL_FEATURES,
     TRAILING_STOP_ACTIVATION_PCT,
     TRAILING_STOP_PCT,
+    VIX_TICKER,
 )
 from .data_service import compute_technical_features, download_ohlcv
 from .fundamental_database import merge_fundamentals_pit
@@ -810,10 +811,10 @@ def run_backtest(
 
     # ------------------------------------------------------------------
     # Step 3: Download OHLCV data.
-    # We download the S&P 500 index separately — it's needed for the
-    # market_trend feature and the benchmark curve.
+    # We download the S&P 500 index and VIX separately — they're needed
+    # for market_trend, VIX features, and the benchmark curve.
     # ------------------------------------------------------------------
-    all_tickers = tickers + [SP500_MARKET_TICKER]
+    all_tickers = tickers + [SP500_MARKET_TICKER, VIX_TICKER]
     raw_data = download_ohlcv(all_tickers)
 
     if SP500_MARKET_TICKER not in raw_data:
@@ -823,6 +824,13 @@ def run_backtest(
         )
 
     market_df = raw_data.pop(SP500_MARKET_TICKER)
+
+    vix_df = raw_data.pop(VIX_TICKER, None)
+    if vix_df is None:
+        logger.warning(
+            "Could not download VIX (%s). VIX features will be NaN.",
+            VIX_TICKER,
+        )
 
     if not raw_data:
         raise RuntimeError(
@@ -835,15 +843,18 @@ def run_backtest(
     )
 
     # ------------------------------------------------------------------
-    # Step 4: Compute technical features + merge historical fundamentals.
-    # Technical features (11) come from OHLCV data. Fundamental
-    # features (8) are merged point-in-time from the historical
-    # database using publish_date — no look-ahead bias.
+    # Step 4: Compute features + merge all data sources.
+    # Technical (11) + VIX (4) from OHLCV data.
+    # Fundamentals (8) merged PIT from historical database.
+    # Macro (6) merged PIT from FRED database.
+    # Sentiment (5) merged with 1-day lag PIT.
     # ------------------------------------------------------------------
     parts: list[pd.DataFrame] = []
 
     for ticker, df in raw_data.items():
-        featured = compute_technical_features(df, market_df=market_df)
+        featured = compute_technical_features(
+            df, market_df=market_df, vix_df=vix_df,
+        )
         featured = featured.dropna(subset=TECHNICAL_FEATURES)
         if not featured.empty:
             featured = featured.copy()
@@ -853,7 +864,7 @@ def run_backtest(
             parts.append(featured)
 
     logger.info(
-        "Technical features computed for %d tickers "
+        "Technical + VIX features computed for %d tickers "
         "(%d dropped due to insufficient data).",
         len(parts), len(raw_data) - len(parts),
     )
@@ -864,10 +875,31 @@ def run_backtest(
             "Try a longer download period."
         )
 
-    # Merge historical fundamentals point-in-time
-    logger.info("Merging historical fundamentals (point-in-time)...")
+    # Merge all data sources point-in-time
     combined = pd.concat(parts, ignore_index=True)
+
+    logger.info("Merging historical fundamentals (point-in-time)...")
     combined = merge_fundamentals_pit(combined)
+
+    try:
+        from .macro_database import merge_macro_pit
+        logger.info("Merging FRED macro data (point-in-time)...")
+        combined = merge_macro_pit(combined)
+    except FileNotFoundError:
+        logger.warning("Macro data not available. Macro features will be NaN.")
+
+    try:
+        from .sentiment_pipeline import merge_sentiment_pit
+        logger.info("Merging sentiment scores (with 1-day lag)...")
+        combined = merge_sentiment_pit(combined)
+    except FileNotFoundError:
+        logger.warning("Sentiment data not available. Sentiment features will be NaN.")
+
+    # Ensure all expected feature columns exist
+    import numpy as _np
+    for col in FEATURE_COLUMNS:
+        if col not in combined.columns:
+            combined[col] = _np.nan
 
     # Split back into per-ticker DataFrames with DatetimeIndex
     feature_dfs: dict[str, pd.DataFrame] = {}
@@ -877,7 +909,7 @@ def run_backtest(
         feature_dfs[ticker] = grp
 
     logger.info(
-        "Features ready for %d tickers (19 features per row).",
+        "Features ready for %d tickers (34 features per row).",
         len(feature_dfs),
     )
 

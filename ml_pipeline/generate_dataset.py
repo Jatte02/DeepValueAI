@@ -1,29 +1,26 @@
 """
 Historical ETL pipeline — build the training dataset from scratch.
 
-Downloads 5 years of daily OHLCV data for every S&P 500 constituent,
-computes the 19 features defined in config.py, generates forward-looking
-binary labels, and saves a single CSV ready for model training.
+Downloads 10 years of daily OHLCV data for all tickers in the SimFin
+universe (~3,600), computes the 34 features defined in config.py,
+generates forward-looking binary labels, and saves a single CSV ready
+for model training.
+
+DATA SOURCES MERGED (all point-in-time safe):
+    1. OHLCV prices  → 11 technical features (Yahoo Finance)
+    2. VIX (^VIX)    → 4 volatility regime features (Yahoo Finance)
+    3. Fundamentals  → 8 fundamental features (SimFin, publish_date PIT)
+    4. FRED macro    → 6 macro features (FRED API, realtime_start PIT)
+    5. News/NLP      → 5 sentiment features (FinBERT, 1-day lag PIT)
 
 LABEL LOGIC:
     For each trading day *t* and a given ticker:
-        1. Look at the next 60 trading days (PREDICTION_HORIZON_DAYS).
+        1. Look at the next PREDICTION_HORIZON_DAYS trading days.
         2. Find the maximum closing price in that window.
         3. Compute the return: max_price / close_t - 1.
-        4. If return >= 5% (MIN_RETURN_TARGET) → label = 1 (good buy).
+        4. If return >= MIN_RETURN_TARGET → label = 1 (good buy).
            Else → label = 0 (bad buy).
-    Rows without 60 future days of data are discarded (no label possible).
-
-FUNDAMENTAL FEATURES:
-    Historical quarterly fundamentals are merged point-in-time from the
-    local fundamental database (built by core.fundamental_database).
-    Each row gets the fundamentals that were actually available on that
-    date (based on SEC filing / publish date), eliminating look-ahead
-    bias. Price-dependent ratios (pe_ratio, peg_ratio, fcf_yield) are
-    computed at merge time using the daily close price.
-
-    This means the SAME trained model (all 19 features) can be used for
-    both real-time screening and historical backtesting without bias.
+    Rows without enough future data are discarded (no label possible).
 
 Usage:
     python -m ml_pipeline.generate_dataset
@@ -41,11 +38,13 @@ from core.config import (
     PREDICTION_HORIZON_DAYS,
     SP500_MARKET_TICKER,
     TECHNICAL_FEATURES,
+    VIX_TICKER,
     setup_logging,
 )
 from core.data_service import (
     compute_technical_features,
     download_ohlcv,
+    get_simfin_tickers,
     get_sp500_tickers,
 )
 from core.fundamental_database import merge_fundamentals_pit
@@ -115,15 +114,16 @@ def create_labels(
 # ---------------------------------------------------------------------------
 
 def generate_dataset() -> pd.DataFrame:
-    """Download S&P 500 data, compute features, create labels, save CSV.
+    """Download data, compute 34 features, create labels, save CSV.
 
     The full pipeline:
-        1. Scrape the ~503 S&P 500 tickers from Wikipedia.
-        2. Download 5 years of daily OHLCV data for every ticker + ^GSPC.
-        3. For each ticker, compute 11 technical features and generate
-           binary labels.
-        4. Concatenate all tickers and merge historical fundamentals
-           point-in-time (8 features from fundamental database).
+        1. Get ticker list from SimFin fundamentals (fallback: S&P 500).
+        2. Download 10 years of daily OHLCV for all tickers + ^GSPC + ^VIX.
+        3. Per ticker: compute 11 technical + 4 VIX features, create labels.
+        4. Concatenate and merge:
+           a. Historical fundamentals (8 features, publish_date PIT)
+           b. FRED macro data (6 features, release_date PIT)
+           c. Sentiment scores (5 features, 1-day lag PIT)
         5. Save to ``PATHS["dataset_file"]``.
 
     Returns
@@ -137,15 +137,23 @@ def generate_dataset() -> pd.DataFrame:
         If no data could be processed (network failure, API issues, etc.).
     """
     # ------------------------------------------------------------------
-    # 1. Get ticker list
+    # 1. Get ticker list (SimFin universe or S&P 500 fallback)
     # ------------------------------------------------------------------
-    tickers = get_sp500_tickers()
-    logger.info("Got %d S&P 500 tickers.", len(tickers))
+    try:
+        tickers = get_simfin_tickers()
+        logger.info("Using SimFin universe: %d tickers.", len(tickers))
+    except FileNotFoundError:
+        logger.warning(
+            "SimFin fundamentals not found. Falling back to S&P 500 tickers."
+        )
+        tickers = get_sp500_tickers()
+        logger.info("Using S&P 500: %d tickers.", len(tickers))
 
     # ------------------------------------------------------------------
-    # 2. Download OHLCV for all tickers + S&P 500 index
+    # 2. Download OHLCV for all tickers + market index + VIX
     # ------------------------------------------------------------------
-    all_tickers = tickers + [SP500_MARKET_TICKER]
+    reference_tickers = [SP500_MARKET_TICKER, VIX_TICKER]
+    all_tickers = tickers + reference_tickers
     ohlcv_data = download_ohlcv(all_tickers)
 
     market_df = ohlcv_data.pop(SP500_MARKET_TICKER, None)
@@ -156,8 +164,16 @@ def generate_dataset() -> pd.DataFrame:
             SP500_MARKET_TICKER,
         )
 
+    vix_df = ohlcv_data.pop(VIX_TICKER, None)
+    if vix_df is None:
+        logger.warning(
+            "Could not download VIX (%s). "
+            "VIX features will be NaN for all tickers.",
+            VIX_TICKER,
+        )
+
     # ------------------------------------------------------------------
-    # 3. Technical features + label creation per ticker
+    # 3. Technical + VIX features + label creation per ticker
     # ------------------------------------------------------------------
     chunks: list[pd.DataFrame] = []
     skipped = 0
@@ -168,8 +184,10 @@ def generate_dataset() -> pd.DataFrame:
             continue
 
         try:
-            # Compute 11 technical features from OHLCV data
-            df = compute_technical_features(ohlcv_data[ticker], market_df)
+            # Compute 11 technical + 4 VIX features from OHLCV data
+            df = compute_technical_features(
+                ohlcv_data[ticker], market_df, vix_df=vix_df,
+            )
             df = df.dropna(subset=TECHNICAL_FEATURES)
 
             if df.empty:
@@ -212,12 +230,40 @@ def generate_dataset() -> pd.DataFrame:
         )
 
     # ------------------------------------------------------------------
-    # 4. Concatenate and merge historical fundamentals
+    # 4. Concatenate and merge all data sources
     # ------------------------------------------------------------------
     dataset = pd.concat(chunks, ignore_index=True)
 
+    # 4a. Historical fundamentals (8 features)
     logger.info("Merging historical fundamentals (point-in-time)...")
     dataset = merge_fundamentals_pit(dataset)
+
+    # 4b. FRED macro data (6 features)
+    try:
+        from core.macro_database import merge_macro_pit
+        logger.info("Merging FRED macro data (point-in-time)...")
+        dataset = merge_macro_pit(dataset)
+    except FileNotFoundError:
+        logger.warning(
+            "Macro data not found. Run: python -m core.macro_database\n"
+            "Macro features will be NaN."
+        )
+
+    # 4c. Sentiment scores (5 features)
+    try:
+        from core.sentiment_pipeline import merge_sentiment_pit
+        logger.info("Merging sentiment scores (with 1-day lag)...")
+        dataset = merge_sentiment_pit(dataset)
+    except FileNotFoundError:
+        logger.warning(
+            "Sentiment data not found. Run: python -m core.sentiment_pipeline\n"
+            "Sentiment features will be NaN."
+        )
+
+    # Ensure all expected feature columns exist (fill missing with NaN)
+    for col in FEATURE_COLUMNS:
+        if col not in dataset.columns:
+            dataset[col] = np.nan
 
     # Select only the columns needed for training
     cols_to_save = ["ticker", "date"] + FEATURE_COLUMNS + ["label"]
@@ -235,18 +281,31 @@ def generate_dataset() -> pd.DataFrame:
     n_total = n_positive + n_negative
     pct_positive = 100 * n_positive / n_total if n_total > 0 else 0
 
+    # Feature coverage report
+    feature_coverage = {}
+    for col in FEATURE_COLUMNS:
+        pct = 100 * dataset[col].notna().mean()
+        feature_coverage[col] = pct
+
     logger.info(
         "Dataset saved to %s\n"
         "  Rows:     %d\n"
         "  Tickers:  %d\n"
+        "  Features: %d\n"
         "  Positive: %d (%.1f%%)\n"
         "  Negative: %d (%.1f%%)",
         output_path,
         n_total,
         dataset["ticker"].nunique(),
+        len(FEATURE_COLUMNS),
         n_positive, pct_positive,
         n_negative, 100 - pct_positive,
     )
+
+    # Log feature coverage
+    logger.info("Feature coverage:")
+    for feat, pct in sorted(feature_coverage.items(), key=lambda x: x[1]):
+        logger.info("  %-25s %5.1f%%", feat, pct)
 
     return dataset
 

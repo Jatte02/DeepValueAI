@@ -39,6 +39,11 @@ PATHS = {
     "backtest_threshold_file": PROJECT_ROOT / "models" / "optimal_threshold_backtest.txt",
     "fundamentals_dir": PROJECT_ROOT / "data" / "fundamentals",
     "fundamentals_file": PROJECT_ROOT / "data" / "fundamentals" / "fundamentals_features.parquet",
+    "macro_dir": PROJECT_ROOT / "data" / "macro",
+    "macro_file": PROJECT_ROOT / "data" / "macro" / "macro_features.parquet",
+    "news_dir": PROJECT_ROOT / "data" / "news",
+    "news_raw_file": PROJECT_ROOT / "data" / "news" / "headlines_raw.parquet",
+    "sentiment_file": PROJECT_ROOT / "data" / "news" / "sentiment_scores.parquet",
 }
 
 
@@ -80,8 +85,41 @@ FUNDAMENTAL_FEATURES = [
     "fcf_yield",                # Free cash flow / market cap (real cash generation)
 ]
 
+# --- VIX / Volatility features (4) ---
+# Derived from the CBOE Volatility Index (^VIX).
+VIX_FEATURES = [
+    "vix_level",                # Raw VIX close (daily)
+    "vix_regime",               # Regime bucket: 0 (<15), 1 (15-25), 2 (25-35), 3 (>35)
+    "vix_change_5d",            # 5-day percentage change in VIX
+    "vix_sma_distance",         # (VIX - VIX_SMA_50) / VIX_SMA_50
+]
+
+# --- Macro features (6) ---
+# From Federal Reserve Economic Data (FRED API).
+MACRO_FEATURES = [
+    "fed_rate",                 # Federal Funds Effective Rate
+    "fed_rate_change_3m",       # 3-month change in fed rate
+    "unemployment",             # Unemployment rate (UNRATE)
+    "unemployment_trend",       # 3-month change in unemployment
+    "gdp_growth",               # Quarter-over-quarter real GDP growth
+    "cpi_yoy",                  # Year-over-year CPI change (inflation)
+]
+
+# --- Sentiment / NLP features (5) ---
+# From FinBERT scoring of financial news headlines.
+SENTIMENT_FEATURES = [
+    "sentiment_mean",           # Average daily sentiment score [-1, +1]
+    "sentiment_std",            # Disagreement between headlines
+    "news_volume",              # Number of headlines per ticker-day
+    "sentiment_max",            # Most positive headline score
+    "sentiment_min",            # Most negative headline score
+]
+
 # Combined list used by the model (order matters for training consistency)
-FEATURE_COLUMNS = TECHNICAL_FEATURES + FUNDAMENTAL_FEATURES
+FEATURE_COLUMNS = (
+    TECHNICAL_FEATURES + FUNDAMENTAL_FEATURES
+    + VIX_FEATURES + MACRO_FEATURES + SENTIMENT_FEATURES
+)
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +183,24 @@ MIN_RETURN_TARGET = 0.10         # Target: stock rises at least 10%
 # Data download
 # ---------------------------------------------------------------------------
 
-DOWNLOAD_PERIOD = "5y"
+DOWNLOAD_PERIOD = "10y"
 DOWNLOAD_INTERVAL = "1d"
 SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 SP500_MARKET_TICKER = "^GSPC"
+VIX_TICKER = "^VIX"
 API_SLEEP_SECONDS = 0.1          # Pause between yfinance calls
+
+# FRED series IDs for macro features
+FRED_SERIES = {
+    "DFF": "fed_rate",           # Federal Funds Effective Rate (daily)
+    "UNRATE": "unemployment",    # Unemployment Rate (monthly)
+    "GDP": "gdp_growth",         # Real GDP (quarterly)
+    "CPIAUCSL": "cpi_yoy",      # Consumer Price Index (monthly)
+}
+
+# NLP / Sentiment
+SENTIMENT_LAG_DAYS = 1           # Lag sentiment by 1 business day to avoid look-ahead
+SENTIMENT_FFILL_LIMIT = 5        # Forward-fill sentiment for max 5 trading days
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +215,7 @@ MACD_SLOW = 26
 MACD_SIGNAL = 9
 ATR_LENGTH = 14
 VOLUME_SMA_LENGTH = 20
+VIX_SMA_LENGTH = 50
 
 
 # ---------------------------------------------------------------------------

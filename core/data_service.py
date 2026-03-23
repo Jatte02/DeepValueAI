@@ -37,11 +37,13 @@ from .config import (
     MACD_FAST,
     MACD_SIGNAL,
     MACD_SLOW,
+    PATHS,
     RSI_LENGTH,
     SMA_LENGTH,
     SP500_MARKET_TICKER,
     SP500_WIKI_URL,
     TECHNICAL_FEATURES,
+    VIX_SMA_LENGTH,
     VOLUME_SMA_LENGTH,
     WILLIAMS_R_LENGTH,
 )
@@ -141,6 +143,34 @@ def get_sp500_tickers() -> list[str]:
 
     tickers.sort()
     logger.info("Retrieved %d S&P 500 tickers.", len(tickers))
+    return tickers
+
+
+def get_simfin_tickers() -> list[str]:
+    """Read the unique ticker list from the local SimFin fundamentals Parquet.
+
+    Returns the ~3,600 tickers that have fundamental data in the SimFin
+    database. This is the expanded universe beyond S&P 500.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of unique ticker symbols from the fundamentals file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the fundamentals Parquet file doesn't exist.
+    """
+    fund_path = PATHS["fundamentals_file"]
+    if not fund_path.exists():
+        raise FileNotFoundError(
+            f"Fundamentals file not found: {fund_path}\n"
+            "Run first: python -m core.fundamental_database --source simfin"
+        )
+    df = pd.read_parquet(fund_path, columns=["ticker"])
+    tickers = sorted(df["ticker"].unique().tolist())
+    logger.info("Loaded %d tickers from SimFin fundamentals.", len(tickers))
     return tickers
 
 
@@ -279,8 +309,9 @@ def download_ohlcv(
 def compute_technical_features(
     df: pd.DataFrame,
     market_df: pd.DataFrame | None = None,
+    vix_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Add the 11 technical features to an OHLCV DataFrame.
+    """Add the 11 technical features + 4 VIX features to an OHLCV DataFrame.
 
     All indicators are computed using pandas_ta. The function modifies
     a COPY of the input — the original DataFrame is never mutated.
@@ -294,12 +325,15 @@ def compute_technical_features(
         OHLCV data for the market index (S&P 500). Used to compute
         the ``market_trend`` feature. If None, ``market_trend`` is set
         to NaN (useful for unit testing individual tickers).
+    vix_df : pd.DataFrame | None
+        OHLCV data for the VIX (^VIX). Used to compute the 4 VIX
+        features. If None, VIX features are set to NaN.
 
     Returns
     -------
     pd.DataFrame
-        The input DataFrame with 11 new columns appended (see
-        ``config.TECHNICAL_FEATURES`` for the full list).
+        The input DataFrame with 15 new columns appended (11 technical
+        + 4 VIX features).
     """
     df = df.copy()
 
@@ -393,6 +427,38 @@ def compute_technical_features(
         df["market_trend"] = market_trend_series.reindex(df.index, method="ffill")
     else:
         df["market_trend"] = np.nan
+
+    # --- 12-15. VIX Features (volatility regime) ---
+    # The VIX is a market-level feature — every ticker on a given day
+    # gets the same VIX values.
+    if vix_df is not None and not vix_df.empty:
+        vix_close = vix_df["Close"].reindex(df.index, method="ffill")
+
+        # 12. Raw VIX level
+        df["vix_level"] = vix_close
+
+        # 13. VIX regime buckets: 0 (<15), 1 (15-25), 2 (25-35), 3 (>35)
+        df["vix_regime"] = pd.cut(
+            vix_close,
+            bins=[-np.inf, 15, 25, 35, np.inf],
+            labels=[0, 1, 2, 3],
+        ).astype(float)
+
+        # 14. VIX 5-day percentage change (momentum of fear)
+        df["vix_change_5d"] = vix_close.pct_change(periods=5)
+
+        # 15. VIX distance from its own 50-day SMA
+        vix_sma = ta.sma(close=vix_df["Close"], length=VIX_SMA_LENGTH)
+        if vix_sma is not None:
+            vix_sma_aligned = vix_sma.reindex(df.index, method="ffill")
+            df["vix_sma_distance"] = (vix_close - vix_sma_aligned) / vix_sma_aligned
+        else:
+            df["vix_sma_distance"] = np.nan
+    else:
+        df["vix_level"] = np.nan
+        df["vix_regime"] = np.nan
+        df["vix_change_5d"] = np.nan
+        df["vix_sma_distance"] = np.nan
 
     return df
 
@@ -537,21 +603,23 @@ def build_feature_row(
     ticker: str,
     ohlcv_df: pd.DataFrame,
     market_df: pd.DataFrame | None = None,
+    vix_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build a complete feature set for a single ticker.
 
     This is the main entry point that other modules call. It chains
-    together the technical and fundamental feature computation into
-    a single DataFrame ready for model consumption.
+    together the technical, VIX, and fundamental feature computation
+    into a single DataFrame ready for model consumption.
 
     The function:
-        1. Computes all 11 technical features from OHLCV data.
+        1. Computes all 11 technical + 4 VIX features from OHLCV data.
         2. Fetches all 8 fundamental features from Yahoo Finance.
         3. Adds the fundamental values as constant columns (same value
            on every row, because fundamentals are a snapshot, not a
            time series).
         4. Drops rows where technical indicators are NaN due to warmup
            (the first ~200 rows have no SMA_200, for example).
+        5. Fills any missing model feature columns with NaN.
 
     Parameters
     ----------
@@ -563,27 +631,21 @@ def build_feature_row(
     market_df : pd.DataFrame | None
         OHLCV data for the S&P 500 index. Passed through to
         ``compute_technical_features`` for the ``market_trend`` feature.
+    vix_df : pd.DataFrame | None
+        OHLCV data for the VIX. Passed through to
+        ``compute_technical_features`` for VIX features.
 
     Returns
     -------
     pd.DataFrame
-        The original OHLCV data enriched with 19 feature columns
-        (11 technical + 8 fundamental). Rows with NaN in any
-        technical feature are dropped (warmup period).
+        The original OHLCV data enriched with feature columns.
+        Rows with NaN in any technical feature are dropped (warmup).
         The DataFrame retains its DatetimeIndex.
-
-    Examples
-    --------
-    >>> ohlcv = download_ohlcv(["AAPL"], period="2y")["AAPL"]
-    >>> market = download_ohlcv(["^GSPC"], period="2y")["^GSPC"]
-    >>> features = build_feature_row("AAPL", ohlcv, market)
-    >>> features.shape[1] >= 24  # 5 OHLCV + 11 tech + 8 fund
-    True
     """
     # ------------------------------------------------------------------
-    # Step 1: Technical features (11 new columns added to df)
+    # Step 1: Technical + VIX features (15 new columns added to df)
     # ------------------------------------------------------------------
-    df = compute_technical_features(ohlcv_df, market_df=market_df)
+    df = compute_technical_features(ohlcv_df, market_df=market_df, vix_df=vix_df)
 
     # ------------------------------------------------------------------
     # Step 2: Fundamental features (8 values from Yahoo snapshot)
@@ -616,6 +678,17 @@ def build_feature_row(
     # ------------------------------------------------------------------
 
     df = df.dropna(subset=TECHNICAL_FEATURES)
+
+    # ------------------------------------------------------------------
+    # Step 4: Ensure all model feature columns exist.
+    # Macro and sentiment features may not be available in real-time
+    # screener context (they come from pre-built Parquet files).
+    # The model handles NaN via imputation, so missing columns get NaN.
+    # ------------------------------------------------------------------
+    from .config import FEATURE_COLUMNS as _ALL_FEATURES
+    for col in _ALL_FEATURES:
+        if col not in df.columns:
+            df[col] = np.nan
 
     logger.debug(
         "Built features for %s: %d rows, %d columns.",

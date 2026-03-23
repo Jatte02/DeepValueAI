@@ -10,7 +10,6 @@ from core.config import (
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
     SMA_BUY_CEILING,
-    TECHNICAL_FEATURES,
 )
 from core.screener_engine import (
     _analyze_ticker,
@@ -48,13 +47,10 @@ def _make_featured_df(n: int = 60, sma_200: float = 100.0, close: float = 95.0):
         "Volume": rng.integers(1_000_000, 5_000_000, n).astype(float),
         "sma_200": np.full(n, sma_200),
     }
-    # Add all technical features
-    for feat in TECHNICAL_FEATURES:
+    # Add ALL feature columns the model expects (34 total)
+    for feat in FEATURE_COLUMNS:
         if feat not in data:
             data[feat] = rng.random(n)
-    # Add all fundamental features
-    for feat in FUNDAMENTAL_FEATURES:
-        data[feat] = rng.random(n)
 
     return pd.DataFrame(data, index=dates)
 

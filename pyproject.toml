@@ -29,6 +29,7 @@ dependencies = [
     "beautifulsoup4>=4.12",     # Parsing HTML (lista S&P 500)
     "requests>=2.31",           # HTTP requests
     "lxml>=4.9",                # Parser XML para pandas.read_html
+    "fredapi>=0.5",             # FRED (Federal Reserve Economic Data) API
 ]
 
 # ---------------------------------------------------------------
@@ -40,6 +41,10 @@ dependencies = [
 dev = [
     "pytest>=7.4",              # Testing framework
     "ruff>=0.4",                # Linter + formateador (reemplaza flake8 + black)
+]
+nlp = [
+    "transformers>=4.30",       # HuggingFace Transformers (FinBERT)
+    "torch>=2.0",               # PyTorch (GPU inference on RTX 5070)
 ]
 
 # ---------------------------------------------------------------
