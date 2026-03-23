@@ -45,6 +45,7 @@ Usage:
 """
 
 import logging
+import shutil
 
 import joblib
 import numpy as np
@@ -617,8 +618,6 @@ def train_models() -> None:
     backtesting without look-ahead bias. The model is saved to both
     production and backtest paths for backward compatibility.
     """
-    import shutil
-
     # ------------------------------------------------------------------
     # Load dataset
     # ------------------------------------------------------------------
@@ -632,7 +631,6 @@ def train_models() -> None:
     df = pd.read_csv(dataset_path, parse_dates=["date"])
 
     # Replace infinities with NaN so all models can handle them
-    import numpy as np
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
 
     logger.info(

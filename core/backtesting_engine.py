@@ -624,12 +624,13 @@ def _process_day(
     date : pd.Timestamp
         The current trading day.
     feature_dfs : dict[str, pd.DataFrame]
-        Mapping of ticker -> DataFrame with OHLCV + 19 features
-        (11 technical + 8 fundamental). Each DataFrame has a
-        DatetimeIndex. Only rows up to *date* are used (no look-ahead).
+        Mapping of ticker -> DataFrame with OHLCV + 34 features
+        (11 technical + 8 fundamental + 4 VIX + 6 macro + 5 sentiment).
+        Each DataFrame has a DatetimeIndex. Only rows up to *date* are
+        used (no look-ahead).
     model
         A fitted scikit-learn compatible estimator (unified model,
-        trained on all 19 features).
+        trained on all 34 features).
     threshold : float
         Minimum probability for a BUY signal.
     """
@@ -794,7 +795,7 @@ def run_backtest(
     logger.info("=" * 60)
 
     # ------------------------------------------------------------------
-    # Step 1: Load the unified model (19 features).
+    # Step 1: Load the unified model (34 features).
     # ------------------------------------------------------------------
     model = load_model(path=PATHS["model_file"])
     threshold = load_threshold(path=PATHS["threshold_file"])
