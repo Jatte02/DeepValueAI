@@ -14,12 +14,16 @@ LABEL LOGIC:
            Else → label = 0 (bad buy).
     Rows without 60 future days of data are discarded (no label possible).
 
-FUNDAMENTAL FEATURES NOTE:
-    Fundamentals come from Yahoo Finance's *current* snapshot — the same
-    value is applied to every historical row for a ticker. This is a mild
-    form of look-ahead bias, acceptable for training a screening model
-    (which will always use current fundamentals at inference time). The
-    separate backtest model uses only technical features to avoid this.
+FUNDAMENTAL FEATURES:
+    Historical quarterly fundamentals are merged point-in-time from the
+    local fundamental database (built by core.fundamental_database).
+    Each row gets the fundamentals that were actually available on that
+    date (based on SEC filing / publish date), eliminating look-ahead
+    bias. Price-dependent ratios (pe_ratio, peg_ratio, fcf_yield) are
+    computed at merge time using the daily close price.
+
+    This means the SAME trained model (all 19 features) can be used for
+    both real-time screening and historical backtesting without bias.
 
 Usage:
     python -m ml_pipeline.generate_dataset
@@ -36,13 +40,15 @@ from core.config import (
     PATHS,
     PREDICTION_HORIZON_DAYS,
     SP500_MARKET_TICKER,
+    TECHNICAL_FEATURES,
     setup_logging,
 )
 from core.data_service import (
-    build_feature_row,
+    compute_technical_features,
     download_ohlcv,
     get_sp500_tickers,
 )
+from core.fundamental_database import merge_fundamentals_pit
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +120,11 @@ def generate_dataset() -> pd.DataFrame:
     The full pipeline:
         1. Scrape the ~503 S&P 500 tickers from Wikipedia.
         2. Download 5 years of daily OHLCV data for every ticker + ^GSPC.
-        3. For each ticker, call ``build_feature_row`` (11 technical +
-           8 fundamental features) and generate binary labels.
-        4. Concatenate all tickers and save to ``PATHS["dataset_file"]``.
+        3. For each ticker, compute 11 technical features and generate
+           binary labels.
+        4. Concatenate all tickers and merge historical fundamentals
+           point-in-time (8 features from fundamental database).
+        5. Save to ``PATHS["dataset_file"]``.
 
     Returns
     -------
@@ -149,7 +157,7 @@ def generate_dataset() -> pd.DataFrame:
         )
 
     # ------------------------------------------------------------------
-    # 3. Feature engineering + label creation per ticker
+    # 3. Technical features + label creation per ticker
     # ------------------------------------------------------------------
     chunks: list[pd.DataFrame] = []
     skipped = 0
@@ -160,9 +168,9 @@ def generate_dataset() -> pd.DataFrame:
             continue
 
         try:
-            # build_feature_row: OHLCV → 11 technical + 8 fundamental features
-            # Also drops the ~200 warmup rows (NaN from SMA_200, etc.)
-            df = build_feature_row(ticker, ohlcv_data[ticker], market_df)
+            # Compute 11 technical features from OHLCV data
+            df = compute_technical_features(ohlcv_data[ticker], market_df)
+            df = df.dropna(subset=TECHNICAL_FEATURES)
 
             if df.empty:
                 skipped += 1
@@ -172,6 +180,7 @@ def generate_dataset() -> pd.DataFrame:
             df["label"] = create_labels(df["Close"])
             df["ticker"] = ticker
             df["date"] = df.index
+            df["close"] = df["Close"]  # needed for merge_fundamentals_pit
 
             # Drop rows without labels (last PREDICTION_HORIZON_DAYS rows)
             df = df.dropna(subset=["label"])
@@ -203,9 +212,12 @@ def generate_dataset() -> pd.DataFrame:
         )
 
     # ------------------------------------------------------------------
-    # 4. Concatenate and save
+    # 4. Concatenate and merge historical fundamentals
     # ------------------------------------------------------------------
     dataset = pd.concat(chunks, ignore_index=True)
+
+    logger.info("Merging historical fundamentals (point-in-time)...")
+    dataset = merge_fundamentals_pit(dataset)
 
     # Select only the columns needed for training
     cols_to_save = ["ticker", "date"] + FEATURE_COLUMNS + ["label"]

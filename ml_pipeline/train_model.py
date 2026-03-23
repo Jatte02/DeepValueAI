@@ -5,11 +5,9 @@ Trains four sklearn classifiers on the generated dataset, optimizes the
 classification threshold for each via precision-recall analysis, selects
 the best model by validation F1, and saves all artifacts:
 
-    models/best_model.pkl               — production model (19 features)
-    models/optimal_threshold.txt        — production threshold
-    models/best_model_backtest.pkl      — backtest model (11 tech features)
-    models/optimal_threshold_backtest.txt
-    models/model_comparison.csv         — metrics for every model × split
+    models/best_model.pkl               — unified model (19 features)
+    models/optimal_threshold.txt        — optimal threshold
+    models/model_comparison.csv         — metrics for every model x split
 
 SPLITTING STRATEGY:
     Time-based split (NOT random) to respect the temporal nature of
@@ -31,13 +29,12 @@ MODELS COMPARED:
     built-in LightGBM implementation and handles missing fundamentals
     without any preprocessing.
 
-TWO MODEL VARIANTS:
-    - Production (19 features): used by the screener in real time.
-      Includes fundamental features (current snapshot = correct at
-      inference time).
-    - Backtest (11 technical features): used by backtesting_engine.
-      Excludes fundamentals to avoid look-ahead bias in historical
-      simulation.
+UNIFIED MODEL:
+    A single model with all 19 features (11 technical + 8 fundamental)
+    is used for both real-time screening and historical backtesting.
+    This is possible because the training dataset now uses point-in-time
+    historical fundamentals (from core.fundamental_database) instead of
+    broadcasting today's snapshot to all rows. No look-ahead bias.
 
 Usage:
     python -m ml_pipeline.train_model
@@ -70,7 +67,6 @@ from core.config import (
     FEATURE_COLUMNS,
     PATHS,
     PREDICTION_HORIZON_DAYS,
-    TECHNICAL_FEATURES,
     setup_logging,
 )
 
@@ -407,7 +403,14 @@ def train_and_select(
 # ---------------------------------------------------------------------------
 
 def train_models() -> None:
-    """Train production + backtest models and save all artifacts."""
+    """Train a unified model with all 19 features and save artifacts.
+
+    With point-in-time historical fundamentals, a single model serves
+    both real-time screening and backtesting without look-ahead bias.
+    The model is saved to both production and backtest paths for
+    backward compatibility.
+    """
+    import shutil
 
     # ------------------------------------------------------------------
     # Load dataset
@@ -433,13 +436,13 @@ def train_models() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Production model — 19 features (technical + fundamental)
+    # Unified model — 19 features (technical + fundamental)
     # ------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("TRAINING PRODUCTION MODEL (19 features)")
+    logger.info("TRAINING UNIFIED MODEL (19 features)")
     logger.info("=" * 60)
 
-    prod_results = train_and_select(
+    results = train_and_select(
         df=df,
         feature_cols=FEATURE_COLUMNS,
         model_path=PATHS["model_file"],
@@ -447,35 +450,20 @@ def train_models() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Backtest model — 11 technical features only
-    # (No fundamentals → no look-ahead bias in historical simulation)
+    # Copy to backtest paths (backward compatibility)
     # ------------------------------------------------------------------
-    logger.info("=" * 60)
-    logger.info("TRAINING BACKTEST MODEL (11 technical features)")
-    logger.info("=" * 60)
-
-    bt_results = train_and_select(
-        df=df,
-        feature_cols=TECHNICAL_FEATURES,
-        model_path=PATHS["backtest_model_file"],
-        threshold_path=PATHS["backtest_threshold_file"],
-    )
+    shutil.copy2(PATHS["model_file"], PATHS["backtest_model_file"])
+    shutil.copy2(PATHS["threshold_file"], PATHS["backtest_threshold_file"])
+    logger.info("Copied model to backtest paths for backward compatibility.")
 
     # ------------------------------------------------------------------
     # Save comparison table
     # ------------------------------------------------------------------
-    all_results: list[dict] = []
-    for r in prod_results["results"]:
-        r["variant"] = "production_19feat"
-        all_results.append(r)
-    for r in bt_results["results"]:
-        r["variant"] = "backtest_11feat"
-        all_results.append(r)
-
-    comparison = pd.DataFrame(all_results)
+    comparison = pd.DataFrame(results["results"])
+    comparison["variant"] = "unified_19feat"
     comparison_path = PATHS["comparison_file"]
     comparison.to_csv(comparison_path, index=False)
-    logger.info("Comparison table saved → %s", comparison_path)
+    logger.info("Comparison table saved -> %s", comparison_path)
 
     # ------------------------------------------------------------------
     # Final summary
@@ -483,12 +471,8 @@ def train_models() -> None:
     logger.info("=" * 60)
     logger.info("TRAINING COMPLETE")
     logger.info(
-        "  Production : %s (threshold=%.4f)",
-        prod_results["best_model"], prod_results["best_threshold"],
-    )
-    logger.info(
-        "  Backtest   : %s (threshold=%.4f)",
-        bt_results["best_model"], bt_results["best_threshold"],
+        "  Unified model: %s (threshold=%.4f)",
+        results["best_model"], results["best_threshold"],
     )
     logger.info("=" * 60)
 

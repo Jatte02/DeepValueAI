@@ -61,6 +61,7 @@ class TestPaths:
             "models_dir", "data_dir", "model_file", "threshold_file",
             "dataset_file", "comparison_file",
             "backtest_model_file", "backtest_threshold_file",
+            "fundamentals_dir", "fundamentals_file",
         }
         assert expected == set(PATHS.keys())
 

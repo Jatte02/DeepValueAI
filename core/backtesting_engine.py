@@ -7,12 +7,11 @@ checking exit conditions on open positions first, then evaluating
 entry signals for new buys.
 
 LOOK-AHEAD BIAS PREVENTION:
-    This engine uses a model trained on ONLY the 11 technical features
-    (no fundamentals). Fundamental data comes from a Yahoo Finance
-    snapshot of TODAY — using it in a 5-year backtest would mean the
-    model "sees the future". Technical features are safe because
-    they're computed from historical OHLCV prices that existed at the
-    time.
+    This engine uses the unified 19-feature model (technical +
+    fundamental). Fundamental features are merged point-in-time from
+    the historical fundamental database using publish_date, so each
+    day only sees fundamentals that were actually filed before that
+    date. No look-ahead bias.
 
 ARCHITECTURE:
     Three layers, each with a single responsibility:
@@ -57,11 +56,13 @@ from .config import (
     SMA_LENGTH,
     SP500_MARKET_TICKER,
     STOP_LOSS_PCT,
+    FEATURE_COLUMNS,
     TECHNICAL_FEATURES,
     TRAILING_STOP_ACTIVATION_PCT,
     TRAILING_STOP_PCT,
 )
 from .data_service import compute_technical_features, download_ohlcv
+from .fundamental_database import merge_fundamentals_pit
 from .prediction_service import load_model, load_threshold, predict_proba
 
 logger = logging.getLogger(__name__)
@@ -622,12 +623,12 @@ def _process_day(
     date : pd.Timestamp
         The current trading day.
     feature_dfs : dict[str, pd.DataFrame]
-        Mapping of ticker → DataFrame with OHLCV + 11 technical features.
-        Each DataFrame has a DatetimeIndex. Only rows up to *date* are
-        used (no look-ahead).
+        Mapping of ticker -> DataFrame with OHLCV + 19 features
+        (11 technical + 8 fundamental). Each DataFrame has a
+        DatetimeIndex. Only rows up to *date* are used (no look-ahead).
     model
-        A fitted scikit-learn compatible estimator (backtest model,
-        trained on 11 technical features only).
+        A fitted scikit-learn compatible estimator (unified model,
+        trained on all 19 features).
     threshold : float
         Minimum probability for a BUY signal.
     """
@@ -667,7 +668,7 @@ def _process_day(
     if batch_rows:
         batch_df = pd.concat(batch_rows, ignore_index=False)
         try:
-            probs = predict_proba(batch_df, model, feature_list=TECHNICAL_FEATURES)
+            probs = predict_proba(batch_df, model, feature_list=FEATURE_COLUMNS)
             for ticker, prob in zip(batch_tickers, probs):
                 probabilities[ticker] = float(prob)
         except (ValueError, Exception) as exc:
@@ -681,7 +682,7 @@ def _process_day(
             for ticker, row_df in zip(batch_tickers, batch_rows):
                 try:
                     prob = predict_proba(
-                        row_df, model, feature_list=TECHNICAL_FEATURES,
+                        row_df, model, feature_list=FEATURE_COLUMNS,
                     )
                     probabilities[ticker] = float(prob[0])
                 except Exception:
@@ -792,10 +793,10 @@ def run_backtest(
     logger.info("=" * 60)
 
     # ------------------------------------------------------------------
-    # Step 1: Load the backtest model (11 features, no fundamentals).
+    # Step 1: Load the unified model (19 features).
     # ------------------------------------------------------------------
-    model = load_model(path=PATHS["backtest_model_file"])
-    threshold = load_threshold(path=PATHS["backtest_threshold_file"])
+    model = load_model(path=PATHS["model_file"])
+    threshold = load_threshold(path=PATHS["threshold_file"])
     logger.info("Model loaded. Threshold: %.4f", threshold)
 
     # ------------------------------------------------------------------
@@ -834,25 +835,50 @@ def run_backtest(
     )
 
     # ------------------------------------------------------------------
-    # Step 4: Compute technical features for each ticker.
-    # This adds the 11 features the backtest model expects.
-    # Warmup rows (first ~200 days with NaN) are dropped inside
-    # compute_technical_features → build_feature_row drops on
-    # TECHNICAL_FEATURES NaN. Here we call compute_technical_features
-    # directly because we DON'T want fundamental features.
+    # Step 4: Compute technical features + merge historical fundamentals.
+    # Technical features (11) come from OHLCV data. Fundamental
+    # features (8) are merged point-in-time from the historical
+    # database using publish_date — no look-ahead bias.
     # ------------------------------------------------------------------
-    feature_dfs: dict[str, pd.DataFrame] = {}
+    parts: list[pd.DataFrame] = []
 
     for ticker, df in raw_data.items():
         featured = compute_technical_features(df, market_df=market_df)
-        # Drop warmup rows where any technical feature is NaN.
         featured = featured.dropna(subset=TECHNICAL_FEATURES)
         if not featured.empty:
-            feature_dfs[ticker] = featured
+            featured = featured.copy()
+            featured["ticker"] = ticker
+            featured["date"] = featured.index
+            featured["close"] = featured["Close"]
+            parts.append(featured)
 
     logger.info(
-        "Features computed for %d tickers (%d dropped due to insufficient data).",
-        len(feature_dfs), len(raw_data) - len(feature_dfs),
+        "Technical features computed for %d tickers "
+        "(%d dropped due to insufficient data).",
+        len(parts), len(raw_data) - len(parts),
+    )
+
+    if not parts:
+        raise RuntimeError(
+            "No tickers have enough data after computing technical features. "
+            "Try a longer download period."
+        )
+
+    # Merge historical fundamentals point-in-time
+    logger.info("Merging historical fundamentals (point-in-time)...")
+    combined = pd.concat(parts, ignore_index=True)
+    combined = merge_fundamentals_pit(combined)
+
+    # Split back into per-ticker DataFrames with DatetimeIndex
+    feature_dfs: dict[str, pd.DataFrame] = {}
+    for ticker, grp in combined.groupby("ticker"):
+        grp = grp.copy()
+        grp.index = pd.DatetimeIndex(grp["date"])
+        feature_dfs[ticker] = grp
+
+    logger.info(
+        "Features ready for %d tickers (19 features per row).",
+        len(feature_dfs),
     )
 
     if not feature_dfs:
