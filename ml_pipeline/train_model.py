@@ -192,11 +192,15 @@ def find_optimal_threshold(
 # ---------------------------------------------------------------------------
 
 def get_candidate_models() -> dict:
-    """Return the four candidate classifiers to compare.
+    """Return the candidate classifiers to compare.
 
-    HistGradientBoosting handles NaN natively. The other three are
+    HistGradientBoosting handles NaN natively. The others are
     wrapped in a Pipeline with ``SimpleImputer(strategy="median")``
     to fill NaN fundamentals before fitting.
+
+    Note: GradientBoostingClassifier was removed because it cannot
+    be parallelized and takes hours on datasets with millions of rows.
+    HistGradientBoosting is its modern replacement (faster, handles NaN).
 
     Returns
     -------
@@ -212,16 +216,6 @@ def get_candidate_models() -> dict:
             class_weight="balanced",
             random_state=42,
         ),
-        "GradientBoosting": Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("model", GradientBoostingClassifier(
-                n_estimators=300,
-                learning_rate=0.05,
-                max_depth=5,
-                min_samples_leaf=20,
-                random_state=42,
-            )),
-        ]),
         "RandomForest": Pipeline([
             ("imputer", SimpleImputer(strategy="median")),
             ("model", RandomForestClassifier(
@@ -424,6 +418,11 @@ def train_models() -> None:
         )
 
     df = pd.read_csv(dataset_path, parse_dates=["date"])
+
+    # Replace infinities with NaN so all models can handle them
+    import numpy as np
+    df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
+
     logger.info(
         "Loaded dataset: %d rows, %d tickers.",
         len(df), df["ticker"].nunique(),
