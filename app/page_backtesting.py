@@ -11,12 +11,15 @@ and displays:
     - Trade log table
 """
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from core.backtesting_engine import run_backtest
+from core.data_service import get_sp500_tickers
 
 _TEST_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "JPM", "JNJ", "V", "PG"]
 
@@ -41,15 +44,16 @@ def render():
             horizontal=True,
         )
     with col2:
-        start_date = st.date_input("Start date", value=pd.Timestamp("2021-01-01"))
-        end_date = st.date_input("End date", value=pd.Timestamp("2024-12-31"))
+        # SimFin free tier fundamentals start ~2020-05; use 2020-06 as safe default
+        start_date = st.date_input("Start date", value=pd.Timestamp("2020-06-01"))
+        end_date = st.date_input("End date", value=date.today())
     with col3:
         capital = st.number_input(
             "Initial capital ($)", value=100_000, step=10_000, min_value=10_000,
         )
 
     if st.button("Run Backtest", type="primary"):
-        tickers = _TEST_TICKERS if "Test" in mode else None
+        tickers = _TEST_TICKERS if "Test" in mode else get_sp500_tickers()
 
         with st.spinner("Running backtest... this may take several minutes."):
             try:

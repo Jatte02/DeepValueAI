@@ -476,10 +476,11 @@ def compute_technical_features(
     # and lowest low over the lookback period.
     # Range: -100 (oversold) to 0 (overbought).
     # We use pandas_ta which returns a Series named "WILLr_{length}".
-    df["williams_r"] = ta.willr(
+    willr = ta.willr(
         high=df["High"], low=df["Low"], close=df["Close"],
         length=WILLIAMS_R_LENGTH,
     )
+    df["williams_r"] = willr if willr is not None else np.nan
 
     # --- 2. Williams %R buy signal (binary) ---
     # Detects when Williams %R crosses from deeply oversold (<-80) to
@@ -493,7 +494,8 @@ def compute_technical_features(
     # --- 3. RSI (Relative Strength Index) ---
     # Classic momentum oscillator. 0-100 scale.
     # Below 30 = oversold, above 70 = overbought.
-    df["rsi"] = ta.rsi(close=df["Close"], length=RSI_LENGTH)
+    rsi = ta.rsi(close=df["Close"], length=RSI_LENGTH)
+    df["rsi"] = rsi if rsi is not None else np.nan
 
     # --- 4. MACD Histogram ---
     # MACD = fast EMA - slow EMA. Signal = EMA of MACD.
@@ -503,7 +505,10 @@ def compute_technical_features(
         close=df["Close"],
         fast=MACD_FAST, slow=MACD_SLOW, signal=MACD_SIGNAL,
     )
-    df["macd_histogram"] = macd_result.iloc[:, 2]  # 3rd column is histogram
+    if macd_result is not None:
+        df["macd_histogram"] = macd_result.iloc[:, 2]  # 3rd column is histogram
+    else:
+        df["macd_histogram"] = np.nan
 
     # --- 5. ATR Normalized (volatility as percentage of price) ---
     # Raw ATR is in dollar terms ($5 ATR means nothing without context).
@@ -513,7 +518,10 @@ def compute_technical_features(
         high=df["High"], low=df["Low"], close=df["Close"],
         length=ATR_LENGTH,
     )
-    df["atr_normalized"] = atr / df["Close"]
+    if atr is not None:
+        df["atr_normalized"] = atr / df["Close"]
+    else:
+        df["atr_normalized"] = np.nan
 
     # --- 6. SMA Distance (price relative to 200-day moving average) ---
     # (Close - SMA_200) / SMA_200 → percentage distance.
@@ -544,7 +552,11 @@ def compute_technical_features(
     # Values < 1 mean low interest. We cap at 5 to prevent outliers
     # from dominating the feature (e.g., earnings day = 10x normal volume).
     vol_sma = ta.sma(close=df["Volume"].astype(float), length=VOLUME_SMA_LENGTH)
-    df["relative_volume"] = (df["Volume"] / vol_sma).clip(upper=5.0)
+    if vol_sma is not None:
+        df["relative_volume"] = (df["Volume"] / vol_sma).clip(upper=5.0)
+    else:
+        vol_sma = pd.Series(np.nan, index=df.index)
+        df["relative_volume"] = np.nan
 
     # --- 10. Volume Trend (is average volume increasing or decreasing?) ---
     # 20-day slope of the volume moving average, normalized.
