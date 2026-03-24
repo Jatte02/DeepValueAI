@@ -44,6 +44,7 @@ PATHS = {
     "news_dir": PROJECT_ROOT / "data" / "news",
     "news_raw_file": PROJECT_ROOT / "data" / "news" / "headlines_raw.parquet",
     "sentiment_file": PROJECT_ROOT / "data" / "news" / "sentiment_scores.parquet",
+    "ohlcv_cache_dir": PROJECT_ROOT / "data" / "ohlcv_cache",
 }
 
 
@@ -184,6 +185,7 @@ MIN_RETURN_TARGET = 0.10         # Target: stock rises at least 10%
 # ---------------------------------------------------------------------------
 
 DOWNLOAD_PERIOD = "7y"           # 5 years of training data + 2 years warmup for SMA-200
+SCREENING_PERIOD = "1y"          # Shorter period for daily screening (enough for SMA-200 + margin)
 DOWNLOAD_INTERVAL = "1d"
 SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 SP500_MARKET_TICKER = "^GSPC"

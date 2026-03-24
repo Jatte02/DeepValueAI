@@ -18,6 +18,8 @@ from core.data_service import (
     download_ohlcv,
     get_fundamental_features,
     get_sp500_tickers,
+    load_ohlcv_cache,
+    save_ohlcv_cache,
 )
 
 
@@ -320,3 +322,55 @@ class TestBuildFeatureRow:
 
         result = build_feature_row("AAPL", sample_ohlcv_df)
         assert isinstance(result.index, pd.DatetimeIndex)
+
+
+# ---------------------------------------------------------------------------
+# OHLCV cache
+# ---------------------------------------------------------------------------
+
+class TestOhlcvCache:
+    def test_save_and_load_roundtrip(self, tmp_path, sample_ohlcv_df):
+        """Save then load should return identical data."""
+        with patch("core.data_service.PATHS", {"ohlcv_cache_dir": tmp_path}):
+            data = {"AAPL": sample_ohlcv_df, "MSFT": sample_ohlcv_df}
+            save_ohlcv_cache(data)
+            loaded = load_ohlcv_cache(["AAPL", "MSFT"])
+
+        assert set(loaded.keys()) == {"AAPL", "MSFT"}
+        # Parquet roundtrip may drop index freq metadata; check values only
+        pd.testing.assert_frame_equal(
+            loaded["AAPL"], sample_ohlcv_df, check_freq=False,
+        )
+
+    def test_load_missing_ticker_skipped(self, tmp_path, sample_ohlcv_df):
+        """Loading a ticker not in cache returns empty for that ticker."""
+        with patch("core.data_service.PATHS", {"ohlcv_cache_dir": tmp_path}):
+            save_ohlcv_cache({"AAPL": sample_ohlcv_df})
+            loaded = load_ohlcv_cache(["AAPL", "NOPE"])
+
+        assert "AAPL" in loaded
+        assert "NOPE" not in loaded
+
+    def test_load_empty_cache(self, tmp_path):
+        """Loading from non-existent cache returns empty dict."""
+        fake_path = tmp_path / "nonexistent"
+        with patch("core.data_service.PATHS", {"ohlcv_cache_dir": fake_path}):
+            loaded = load_ohlcv_cache(["AAPL"])
+        assert loaded == {}
+
+    def test_special_ticker_names(self, tmp_path, sample_ohlcv_df):
+        """Tickers with special chars (^GSPC, ^VIX) save and load correctly."""
+        with patch("core.data_service.PATHS", {"ohlcv_cache_dir": tmp_path}):
+            save_ohlcv_cache({"^GSPC": sample_ohlcv_df, "^VIX": sample_ohlcv_df})
+            loaded = load_ohlcv_cache(["^GSPC", "^VIX"])
+
+        assert "^GSPC" in loaded
+        assert "^VIX" in loaded
+
+    def test_load_all_when_tickers_none(self, tmp_path, sample_ohlcv_df):
+        """Loading with tickers=None returns all cached tickers."""
+        with patch("core.data_service.PATHS", {"ohlcv_cache_dir": tmp_path}):
+            save_ohlcv_cache({"AAPL": sample_ohlcv_df, "MSFT": sample_ohlcv_df})
+            loaded = load_ohlcv_cache(None)
+
+        assert len(loaded) == 2

@@ -7,6 +7,7 @@ from core.config import (
     DEFAULT_THRESHOLD,
     DOWNLOAD_INTERVAL,
     DOWNLOAD_PERIOD,
+    SCREENING_PERIOD,
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
     MACRO_FEATURES,
@@ -67,6 +68,7 @@ class TestPaths:
             "fundamentals_dir", "fundamentals_file",
             "macro_dir", "macro_file",
             "news_dir", "news_raw_file", "sentiment_file",
+            "ohlcv_cache_dir",
         }
         assert expected == set(PATHS.keys())
 
@@ -167,6 +169,9 @@ class TestStrategyParams:
 
     def test_download_period_valid(self):
         assert DOWNLOAD_PERIOD in ("1mo", "3mo", "6mo", "1y", "2y", "5y", "7y", "10y", "max")
+
+    def test_screening_period_valid(self):
+        assert SCREENING_PERIOD in ("1mo", "3mo", "6mo", "1y", "2y", "5y", "7y", "10y", "max")
 
     def test_download_interval_valid(self):
         assert DOWNLOAD_INTERVAL in ("1d", "1wk", "1mo")

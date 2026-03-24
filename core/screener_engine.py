@@ -40,6 +40,8 @@ from .config import (
 from .data_service import (
     build_feature_row,
     download_ohlcv,
+    download_ohlcv_cached,
+    get_simfin_tickers,
     get_sp500_tickers,
 )
 from .prediction_service import load_model, load_threshold, predict_proba
@@ -301,13 +303,14 @@ def scan_sp500(
     threshold_path: str | None = None,
     tickers: list[str] | None = None,
     include_failing: bool = True,
+    use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Scan S&P 500 stocks and return a ranked table of opportunities.
+    """Scan stocks and return a ranked table of opportunities.
 
     This is the main entry point for the screener. It:
         1. Loads the production model and threshold.
-        2. Downloads the S&P 500 ticker list (or uses a custom list).
-        3. Downloads OHLCV data for all tickers + the market index.
+        2. Gets the ticker list (custom, S&P 500, or SimFin universe).
+        3. Downloads OHLCV data (with cache for fast daily rescans).
         4. Runs each ticker through the full analysis pipeline.
         5. Returns a DataFrame sorted by probability descending.
 
@@ -327,6 +330,10 @@ def scan_sp500(
         If True (default), include tickers that don't pass entry
         filters (marked with ``passes_filters=False``). If False,
         only return tickers that pass all filters.
+    use_cache : bool
+        If True (default), use the local OHLCV Parquet cache to avoid
+        re-downloading all tickers on every scan. Only stale tickers
+        are refreshed. Set to False to force a full download.
 
     Returns
     -------
@@ -352,15 +359,12 @@ def scan_sp500(
     >>> results.columns.tolist()[:4]
     ['ticker', 'close', 'sma_200', 'probability']
 
-    >>> # Full scan (takes ~10-15 minutes due to data download)
+    >>> # Full scan with cache (fast after first run)
     >>> results = scan_sp500()
     >>> passing = results[results.passes_filters]
     """
     # ------------------------------------------------------------------
     # Step 1: Load model and threshold.
-    # load_model returns the model; threshold is loaded separately via
-    # load_threshold(). If no threshold file exists, it falls back to
-    # DEFAULT_THRESHOLD from config.
     # ------------------------------------------------------------------
     _model_path = model_path or str(PATHS["model_file"])
     _threshold_path = threshold_path or str(PATHS["threshold_file"])
@@ -374,8 +378,9 @@ def scan_sp500(
 
     # ------------------------------------------------------------------
     # Step 2: Get ticker list.
-    # If no custom list is provided, download the full S&P 500.
-    # We always add the market index and VIX but DON'T scan them.
+    # If no custom list is provided, use S&P 500 for screening.
+    # The full SimFin universe (~3,600) is used for training, but
+    # daily screening defaults to S&P 500 for speed.
     # ------------------------------------------------------------------
     if tickers is None:
         tickers = get_sp500_tickers()
@@ -384,15 +389,19 @@ def scan_sp500(
         logger.info("Using custom ticker list: %d tickers.", len(tickers))
 
     # ------------------------------------------------------------------
-    # Step 3: Download OHLCV data for all tickers + market index + VIX.
+    # Step 3: Download OHLCV data (cached or fresh).
     # ------------------------------------------------------------------
     all_symbols = tickers.copy()
     for ref_ticker in [SP500_MARKET_TICKER, VIX_TICKER]:
         if ref_ticker not in all_symbols:
             all_symbols.append(ref_ticker)
 
-    logger.info("Downloading OHLCV data for %d symbols...", len(all_symbols))
-    ohlcv_data = download_ohlcv(all_symbols)
+    if use_cache:
+        logger.info("Fetching OHLCV data for %d symbols (with cache)...", len(all_symbols))
+        ohlcv_data = download_ohlcv_cached(all_symbols)
+    else:
+        logger.info("Downloading OHLCV data for %d symbols (no cache)...", len(all_symbols))
+        ohlcv_data = download_ohlcv(all_symbols)
 
     # Extract market and VIX data, remove from scan pool.
     market_df = ohlcv_data.pop(SP500_MARKET_TICKER, None)
@@ -412,9 +421,6 @@ def scan_sp500(
 
     # ------------------------------------------------------------------
     # Step 4: Analyze each ticker.
-    # We iterate through the successfully downloaded tickers (not the
-    # original list — some may have failed to download). Each ticker
-    # goes through the full pipeline: features → prediction → metadata.
     # ------------------------------------------------------------------
     results: list[dict] = []
     scannable = [t for t in tickers if t in ohlcv_data]
@@ -437,7 +443,6 @@ def scan_sp500(
         if row is not None:
             results.append(row)
 
-        # Progress logging every 50 tickers
         if i % 50 == 0:
             logger.info("Screener progress: %d / %d tickers analyzed.", i, len(scannable))
 
@@ -450,14 +455,11 @@ def scan_sp500(
 
     df_results = pd.DataFrame(results)
 
-    # Filter out non-passing tickers if requested
     if not include_failing:
         df_results = df_results[df_results["passes_filters"]].copy()
 
-    # Sort by probability descending — highest conviction first
     df_results = df_results.sort_values("probability", ascending=False).reset_index(drop=True)
 
-    # Summary stats
     n_passing = df_results["passes_filters"].sum()
     logger.info(
         "Scan complete: %d tickers analyzed, %d passing filters, %d total in results.",

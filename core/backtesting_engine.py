@@ -805,8 +805,15 @@ def run_backtest(
     # Step 2: Resolve the ticker universe.
     # ------------------------------------------------------------------
     if tickers is None:
-        from .data_service import get_sp500_tickers
-        tickers = get_sp500_tickers()
+        from .data_service import get_simfin_tickers, get_sp500_tickers
+        try:
+            tickers = get_simfin_tickers()
+            logger.info("Using SimFin universe: %d tickers.", len(tickers))
+        except FileNotFoundError:
+            logger.warning(
+                "SimFin fundamentals not found. Falling back to S&P 500."
+            )
+            tickers = get_sp500_tickers()
 
     logger.info("Backtest universe: %d tickers.", len(tickers))
 

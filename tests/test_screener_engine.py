@@ -235,7 +235,7 @@ class TestScanSP500:
             "^GSPC": featured_df,
         }
 
-        result = scan_sp500(tickers=["AAPL"])
+        result = scan_sp500(tickers=["AAPL"], use_cache=False)
         assert isinstance(result, pd.DataFrame)
         assert len(result) >= 1
 
@@ -257,7 +257,7 @@ class TestScanSP500:
             "^GSPC": featured_df,
         }
 
-        result = scan_sp500(tickers=["AAPL", "MSFT"])
+        result = scan_sp500(tickers=["AAPL", "MSFT"], use_cache=False)
         if len(result) >= 2:
             probs = result["probability"].tolist()
             assert probs == sorted(probs, reverse=True)
@@ -270,6 +270,6 @@ class TestScanSP500:
         mock_threshold.return_value = 0.50
         mock_download.return_value = {"^GSPC": pd.DataFrame()}
 
-        result = scan_sp500(tickers=["AAPL"])
+        result = scan_sp500(tickers=["AAPL"], use_cache=False)
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 0

@@ -39,6 +39,7 @@ from .config import (
     MACD_SLOW,
     PATHS,
     RSI_LENGTH,
+    SCREENING_PERIOD,
     SMA_LENGTH,
     SP500_MARKET_TICKER,
     SP500_WIKI_URL,
@@ -301,6 +302,139 @@ def download_ohlcv(
         logger.warning("Failed tickers: %s", failed)
 
     return result
+
+# ---------------------------------------------------------------------------
+# OHLCV cache — Parquet-based local cache for fast incremental updates
+# ---------------------------------------------------------------------------
+
+def save_ohlcv_cache(data: dict[str, pd.DataFrame]) -> None:
+    """Save downloaded OHLCV data to local Parquet cache.
+
+    Each ticker is stored as a separate Parquet file under
+    ``PATHS["ohlcv_cache_dir"]``. This allows incremental updates
+    without re-downloading the entire history.
+
+    Parameters
+    ----------
+    data : dict[str, pd.DataFrame]
+        Mapping of ticker -> OHLCV DataFrame (from ``download_ohlcv``).
+    """
+    cache_dir = PATHS["ohlcv_cache_dir"]
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    saved = 0
+    for ticker, df in data.items():
+        # Sanitize ticker for filesystem (^GSPC -> _GSPC)
+        safe_name = ticker.replace("^", "_").replace("/", "_")
+        path = cache_dir / f"{safe_name}.parquet"
+        df.to_parquet(path, index=True)
+        saved += 1
+
+    logger.info("Saved %d tickers to OHLCV cache at %s.", saved, cache_dir)
+
+
+def load_ohlcv_cache(tickers: list[str] | None = None) -> dict[str, pd.DataFrame]:
+    """Load OHLCV data from local Parquet cache.
+
+    Parameters
+    ----------
+    tickers : list[str] | None
+        Tickers to load. If None, loads all cached tickers.
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        Mapping of ticker -> OHLCV DataFrame. Only includes tickers
+        that exist in the cache.
+    """
+    cache_dir = PATHS["ohlcv_cache_dir"]
+    if not cache_dir.exists():
+        logger.info("No OHLCV cache found at %s.", cache_dir)
+        return {}
+
+    result: dict[str, pd.DataFrame] = {}
+
+    if tickers is None:
+        # Load all cached files
+        for path in cache_dir.glob("*.parquet"):
+            # Reverse sanitization (_GSPC -> ^GSPC)
+            ticker = path.stem.replace("_", "^", 1) if path.stem.startswith("_") else path.stem
+            result[ticker] = pd.read_parquet(path)
+    else:
+        for ticker in tickers:
+            safe_name = ticker.replace("^", "_").replace("/", "_")
+            path = cache_dir / f"{safe_name}.parquet"
+            if path.exists():
+                result[ticker] = pd.read_parquet(path)
+
+    logger.info("Loaded %d tickers from OHLCV cache.", len(result))
+    return result
+
+
+def download_ohlcv_cached(
+    tickers: list[str],
+    period: str = SCREENING_PERIOD,
+    interval: str = DOWNLOAD_INTERVAL,
+    max_age_days: int = 1,
+) -> dict[str, pd.DataFrame]:
+    """Download OHLCV with cache: only fetch tickers with stale or missing data.
+
+    For daily screening, this avoids re-downloading all ~500+ tickers
+    when the cache already has recent data. Only tickers whose latest
+    cached date is older than ``max_age_days`` are refreshed.
+
+    Parameters
+    ----------
+    tickers : list[str]
+        Tickers to fetch.
+    period : str
+        Download period for cache misses (default: SCREENING_PERIOD).
+    interval : str
+        Bar interval (default: "1d").
+    max_age_days : int
+        Maximum age of cached data in calendar days before refreshing.
+        Default is 1 (refresh if last cached date is before today).
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        Mapping of ticker -> OHLCV DataFrame (cached + freshly downloaded).
+    """
+    cached = load_ohlcv_cache(tickers)
+    today = pd.Timestamp.now().normalize()
+    cutoff = today - pd.Timedelta(days=max_age_days)
+
+    # Split into fresh (cached and recent) vs stale (need refresh)
+    fresh: dict[str, pd.DataFrame] = {}
+    stale: list[str] = []
+
+    for ticker in tickers:
+        if ticker in cached:
+            last_date = cached[ticker].index.max()
+            # Strip timezone for comparison
+            if hasattr(last_date, "tz_localize"):
+                last_date = last_date.tz_localize(None)
+            if last_date >= cutoff:
+                fresh[ticker] = cached[ticker]
+            else:
+                stale.append(ticker)
+        else:
+            stale.append(ticker)
+
+    logger.info(
+        "OHLCV cache: %d fresh, %d stale/missing out of %d requested.",
+        len(fresh), len(stale), len(tickers),
+    )
+
+    # Download only stale/missing tickers
+    if stale:
+        downloaded = download_ohlcv(stale, period=period, interval=interval)
+        fresh.update(downloaded)
+        # Update cache with new data
+        save_ohlcv_cache(downloaded)
+
+    return fresh
+
 
 # ---------------------------------------------------------------------------
 # Technical feature engineering
