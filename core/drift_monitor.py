@@ -28,9 +28,8 @@ from .config import FEATURE_COLUMNS, PATHS
 logger = logging.getLogger(__name__)
 
 try:
-    from evidently import ColumnMapping
-    from evidently.metric_preset import DataDriftPreset
-    from evidently.report import Report
+    from evidently import Report
+    from evidently.presets import DataDriftPreset
 
     HAS_EVIDENTLY = True
 except ImportError:
@@ -78,32 +77,37 @@ def detect_drift(
         report_path = PATHS["data_dir"] / "drift_report.html"
     report_path = Path(report_path)
 
-    column_mapping = ColumnMapping(
-        numerical_features=feature_cols,
-    )
-
     report = Report(metrics=[DataDriftPreset()])
-    report.run(
+    snapshot = report.run(
         reference_data=reference_data[feature_cols],
         current_data=current_data[feature_cols],
-        column_mapping=column_mapping,
     )
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report.save_html(str(report_path))
+    snapshot.save_html(str(report_path))
     logger.info("Drift report saved → %s", report_path)
 
-    result_dict = report.as_dict()
-    drift_result = result_dict["metrics"][0]["result"]
+    # Parse results from evidently 0.7+ dict format
+    result_dict = snapshot.dict()
+    metrics = result_dict["metrics"]
 
-    drifted_features = [
-        col for col, info in drift_result["drift_by_columns"].items()
-        if info["drift_detected"]
-    ]
+    # First metric is DriftedColumnsCount with count and share
+    drift_summary = metrics[0]["value"]
+    drift_share = drift_summary["share"]
+
+    # Remaining metrics are per-column ValueDrift (p-value < threshold = drifted)
+    drifted_features = []
+    for m in metrics[1:]:
+        cfg = m.get("config", {})
+        col_name = cfg.get("column")
+        threshold = cfg.get("threshold", 0.05)
+        p_value = m.get("value", 1.0)
+        if col_name and p_value < threshold:
+            drifted_features.append(col_name)
 
     return {
-        "drifted": drift_result["dataset_drift"],
-        "share_drifted_features": drift_result["share_of_drifted_columns"],
+        "drifted": drift_share > 0.5,
+        "share_drifted_features": drift_share,
         "drifted_features": drifted_features,
         "report_path": str(report_path),
     }
