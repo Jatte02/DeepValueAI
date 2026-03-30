@@ -72,6 +72,17 @@ DeepValueAI/
 
 ---
 
+## Requirements
+
+- **Python 3.10+** (tested on 3.12)
+- **OS**: Windows, macOS, or Linux
+- **API Keys** (free):
+  - [SimFin](https://app.simfin.com/) — fundamental data
+  - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — macroeconomic data
+- **Optional**: NVIDIA GPU + CUDA for FinBERT sentiment scoring (CPU works, just slower)
+
+---
+
 ## Quick Start
 ```bash
 # Clone the repository
@@ -80,26 +91,29 @@ cd DeepValueAI
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate    # macOS/Linux
-# .venv\Scripts\activate     # Windows
+source .venv/bin/activate          # macOS/Linux
+# .venv\Scripts\activate           # Windows
 
 # Install dependencies
-make install
+make install                       # or: pip install -e ".[dev]"
+
+# (Optional) Install NLP dependencies for FinBERT sentiment
+pip install -e ".[nlp]"
 
 # Set up API keys (copy and edit .env)
 cp .env.example .env
 # Add your SimFin and FRED API keys to .env
 
-# Download intermediate datasets (run once)
+# Download intermediate datasets (run once, ~30 min total)
 python -m core.fundamental_database --source simfin
 python -m core.macro_database
 python -m core.news_database --source edgar
-python -m core.sentiment_pipeline
+python -m core.sentiment_pipeline   # requires [nlp] dependencies
 
 # Generate training data (~1-2 hours for ~3,600 tickers)
 make dataset
 
-# Train and compare models (~10-15 min)
+# Train and compare models (~10-15 min, logged to MLflow)
 make train
 
 # Launch the dashboard
@@ -111,13 +125,15 @@ make run
 ## Available Commands
 ```bash
 make help       # Show all commands
-make run        # Launch Streamlit dashboard
-make test       # Run unit tests
-make lint       # Check code quality
-make install    # Install dependencies
-make dataset    # Generate training dataset
-make train      # Train ML models
-make pipeline   # Full pipeline: data -> model
+make run        # Launch Streamlit dashboard (http://localhost:8501)
+make test       # Run all 191 unit tests
+make lint       # Check code quality with ruff
+make fix        # Auto-fix lint issues and format code
+make install    # Install dependencies (pip install -e ".[dev]")
+make dataset    # Generate training dataset (~1-2 hours)
+make train      # Train ML models (~10-15 min, logged to MLflow)
+make pipeline   # Full pipeline: dataset + train
+make clean      # Remove Python cache files
 ```
 
 ---
@@ -166,9 +182,9 @@ Yahoo Finance (OHLCV + VIX) ─────────────────�
 
 The screener uses a per-ticker Parquet cache (`data/ohlcv_cache/`) for fast daily screening:
 
-- **Training/Backtest**: Full 7-year download (~3,600 tickers, batch mode)
-- **Daily Screening**: 1-year window, only re-downloads tickers older than 1 day
-- **Result**: Screening completes in ~5 min instead of ~60 min
+- **Training/Backtest**: Full 7-year OHLCV download (~3,600 tickers, batch mode)
+- **Daily Screening**: 1-year window with cache, only re-downloads stale tickers (>1 day old)
+- **Result**: Daily screening completes in ~5 min instead of ~60 min
 
 ---
 
@@ -196,6 +212,25 @@ mlflow ui               # View experiments at http://localhost:5000
 ```
 
 Each training run logs: hyperparameters, CV scores, validation/test metrics, and the winning model artifact.
+
+---
+
+## Backtest Results (S&P 500, 2020-06 to 2026-03)
+
+| Metric | Value |
+|--------|-------|
+| Total Return | **604%** |
+| Annualized Return | 40.1% |
+| Benchmark (S&P 500) | 112.9% |
+| Alpha | +491% |
+| Sharpe Ratio | 1.94 |
+| Sortino Ratio | 2.82 |
+| Max Drawdown | -17.9% |
+| Win Rate | 69.8% |
+| Profit Factor | 4.77 |
+| Total Trades | 1,693 |
+
+*Results from historical simulation with $100K initial capital, no look-ahead bias.*
 
 ---
 
