@@ -50,6 +50,13 @@ import shutil
 import joblib
 import numpy as np
 import pandas as pd
+
+try:
+    import mlflow
+    import mlflow.sklearn
+    HAS_MLFLOW = True
+except ImportError:
+    HAS_MLFLOW = False
 from sklearn.base import clone
 from sklearn.ensemble import (
     HistGradientBoostingClassifier,
@@ -496,6 +503,22 @@ def train_and_select(
     candidates = get_candidate_models(hgbc_params=hgbc_params)
 
     # ------------------------------------------------------------------
+    # MLflow: start parent run
+    # ------------------------------------------------------------------
+    mlflow_active = False
+    if HAS_MLFLOW:
+        try:
+            mlflow.set_tracking_uri("file:./mlruns")
+            mlflow.set_experiment("DeepValueAI")
+            mlflow.start_run(run_name="train_and_select")
+            mlflow.log_param("n_features", len(feature_cols))
+            mlflow.log_param("n_cv_folds", len(folds))
+            mlflow.log_param("dataset_rows", len(df))
+            mlflow_active = True
+        except Exception:
+            logger.warning("MLflow logging failed to start — continuing without it.")
+
+    # ------------------------------------------------------------------
     # Phase 1: Temporal CV for model selection
     # ------------------------------------------------------------------
     cv_scores: dict[str, float] = {}
@@ -539,6 +562,11 @@ def train_and_select(
         len(train), len(val), len(test),
     )
 
+    if mlflow_active:
+        mlflow.log_param("train_size", len(train))
+        mlflow.log_param("val_size", len(val))
+        mlflow.log_param("test_size", len(test))
+
     X_train = train[feature_cols].values
     y_train = train["label"].values
     X_val = val[feature_cols].values
@@ -575,6 +603,19 @@ def train_and_select(
         trained_models[name] = model
         trained_thresholds[name] = threshold
 
+        # MLflow: log each candidate as a nested run
+        if mlflow_active:
+            with mlflow.start_run(run_name=name, nested=True):
+                mlflow.log_param("model_name", name)
+                mlflow.log_param("threshold", round(threshold, 6))
+                mlflow.log_metric("cv_score", cv_scores.get(name, 0))
+                for k, v in val_metrics.items():
+                    if isinstance(v, float):
+                        mlflow.log_metric(f"val_{k}", v)
+                for k, v in test_metrics.items():
+                    if isinstance(v, float):
+                        mlflow.log_metric(f"test_{k}", v)
+
         logger.info(
             "  %s — CV F1=%.4f | val F1=%.4f | test F1=%.4f | threshold=%.4f | AUC=%.4f",
             name, cv_scores.get(name, 0), val_metrics["f1"], test_metrics["f1"],
@@ -598,6 +639,13 @@ def train_and_select(
 
     threshold_path.write_text(f"{best_threshold:.6f}\n")
     logger.info("Threshold saved → %s", threshold_path)
+
+    # MLflow: log winner model artifact and close parent run
+    if mlflow_active:
+        mlflow.log_param("best_model", best_name)
+        mlflow.log_param("best_threshold", round(best_threshold, 6))
+        mlflow.sklearn.log_model(best_model, "model")
+        mlflow.end_run()
 
     return {
         "best_model": best_name,
@@ -633,10 +681,8 @@ def train_models() -> None:
     # Replace infinities with NaN so all models can handle them
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
 
-    logger.info(
-        "Loaded dataset: %d rows, %d tickers.",
-        len(df), df["ticker"].nunique(),
-    )
+    n_tickers = df["ticker"].nunique()
+    logger.info("Loaded dataset: %d rows, %d tickers.", len(df), n_tickers)
 
     # Class balance summary
     positive_pct = df["label"].mean() * 100
@@ -644,6 +690,14 @@ def train_models() -> None:
         "Class balance: %.1f%% positive (1), %.1f%% negative (0).",
         positive_pct, 100 - positive_pct,
     )
+
+    # Log dataset metadata to MLflow (if available)
+    if HAS_MLFLOW:
+        try:
+            mlflow.set_tracking_uri("file:./mlruns")
+            mlflow.set_experiment("DeepValueAI")
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Unified model — 34 features (technical + fundamental + VIX + macro + sentiment)

@@ -29,6 +29,8 @@ dependencies = [
     "requests>=2.31",           # HTTP requests
     "lxml>=4.9",                # XML parser for pandas.read_html
     "fredapi>=0.5",             # FRED (Federal Reserve Economic Data) API
+    "mlflow>=2.10",             # Experiment tracking and model registry
+    "evidently>=0.4",           # Data and prediction drift monitoring
 ]
 
 # ---------------------------------------------------------------

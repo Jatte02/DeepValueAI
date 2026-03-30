@@ -22,18 +22,15 @@ DESIGN PRINCIPLE:
 """
 
 import logging
-import time
 
 import numpy as np
 import pandas as pd
 
 from .config import (
-    API_SLEEP_SECONDS,
-    DEFAULT_THRESHOLD,
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
-    SMA_BUY_CEILING,
     PATHS,
+    SMA_BUY_CEILING,
     SP500_MARKET_TICKER,
     VIX_TICKER,
 )
@@ -41,10 +38,9 @@ from .data_service import (
     build_feature_row,
     download_ohlcv,
     download_ohlcv_cached,
-    get_simfin_tickers,
     get_sp500_tickers,
 )
-from .prediction_service import load_model, load_threshold, predict_proba
+from .prediction_service import load_model, load_threshold
 
 logger = logging.getLogger(__name__)
 

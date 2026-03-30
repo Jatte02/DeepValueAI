@@ -14,9 +14,8 @@ WHY THIS FILE EXISTS:
     propagates everywhere.
 """
 
-from pathlib import Path
 import logging
-
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Project paths (absolute — work from ANY working directory)

@@ -6,7 +6,6 @@ import pytest
 
 from core.macro_database import _build_macro_features, merge_macro_pit
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

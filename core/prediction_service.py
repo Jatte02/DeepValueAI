@@ -38,7 +38,6 @@ import pandas as pd
 from .config import (
     DEFAULT_THRESHOLD,
     FEATURE_COLUMNS,
-    TECHNICAL_FEATURES,
     PATHS,
 )
 

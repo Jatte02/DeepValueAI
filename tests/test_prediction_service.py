@@ -1,6 +1,5 @@
 """Tests for core.prediction_service — model/threshold loading, inference, signals."""
 
-import textwrap
 
 import numpy as np
 import pandas as pd
@@ -13,7 +12,6 @@ from core.prediction_service import (
     load_threshold,
     predict_proba,
 )
-
 
 # ---------------------------------------------------------------------------
 # load_model

@@ -1,6 +1,6 @@
 """Tests for core.screener_engine — signal metadata, ticker analysis, scan."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -9,14 +9,12 @@ import pytest
 from core.config import (
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
-    SMA_BUY_CEILING,
 )
 from core.screener_engine import (
     _analyze_ticker,
     _compute_signal_metadata,
     scan_sp500,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -169,7 +167,7 @@ class TestAnalyzeTicker:
             "AAPL", df, market_df=None,
             model=model, threshold=0.50, feature_list=FEATURE_COLUMNS,
         )
-        assert result["passes_filters"] == True
+        assert result["passes_filters"]
 
     @patch("core.screener_engine.build_feature_row")
     def test_fails_filters_when_price_above_sma_ceiling(self, mock_build):
@@ -182,7 +180,7 @@ class TestAnalyzeTicker:
             "AAPL", df, market_df=None,
             model=model, threshold=0.50, feature_list=FEATURE_COLUMNS,
         )
-        assert result["passes_filters"] == False
+        assert not result["passes_filters"]
 
     @patch("core.screener_engine.build_feature_row")
     def test_fails_filters_when_below_threshold(self, mock_build):

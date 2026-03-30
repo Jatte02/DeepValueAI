@@ -15,10 +15,9 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from core.config import FEATURE_COLUMNS, FUNDAMENTAL_FEATURES, PATHS
+from core.config import FEATURE_COLUMNS, PATHS
 from core.data_service import build_feature_row, download_ohlcv
 from core.prediction_service import generate_signal, load_model, load_threshold
-
 
 # ---------------------------------------------------------------------------
 # Cached model loading — loaded once, reused across reruns
@@ -257,8 +256,8 @@ def _show_fundamentals(df: pd.DataFrame):
     for i, (key, (label, fmt)) in enumerate(_FUND_LABELS.items()):
         val = latest.get(key)
         with cols[i % 4]:
-            if pd.notna(val):
-                display = f"{val:.2%}" if fmt == "pct" else f"{val:.2f}"
-            else:
-                display = "N/A"
+            display = (
+                (f"{val:.2%}" if fmt == "pct" else f"{val:.2f}")
+                if pd.notna(val) else "N/A"
+            )
             st.metric(label, display)

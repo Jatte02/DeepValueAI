@@ -22,7 +22,6 @@ from core.data_service import (
     save_ohlcv_cache,
 )
 
-
 # ---------------------------------------------------------------------------
 # compute_technical_features
 # ---------------------------------------------------------------------------
@@ -288,7 +287,9 @@ class TestGetFundamentalFeatures:
 
 class TestBuildFeatureRow:
     @patch("core.data_service.get_fundamental_features")
-    def test_returns_technical_and_fundamental_features(self, mock_fund, sample_ohlcv_df, sample_market_df):
+    def test_returns_technical_and_fundamental_features(
+        self, mock_fund, sample_ohlcv_df, sample_market_df,
+    ):
         mock_fund.return_value = {f: 1.0 for f in FUNDAMENTAL_FEATURES}
 
         result = build_feature_row("AAPL", sample_ohlcv_df, market_df=sample_market_df)

@@ -116,12 +116,12 @@ def download_simfin(api_key: str = "free") -> dict[str, pd.DataFrame]:
     """
     try:
         import simfin as sf
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "simfin is not installed.\n"
             "  pip install simfin\n"
             "Then get a free API key at https://app.simfin.com/"
-        )
+        ) from err
 
     SIMFIN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     sf.set_api_key(api_key)
@@ -547,7 +547,9 @@ def merge_fundamentals_pit(
         "eps_ttm", "fcf_ttm", "earnings_growth", "shares_diluted",
     ]
     fund_slim = fund_df[[c for c in merge_cols if c in fund_df.columns]].copy()
-    fund_slim["publish_date"] = pd.to_datetime(fund_slim["publish_date"], utc=True).dt.tz_localize(None)
+    fund_slim["publish_date"] = (
+        pd.to_datetime(fund_slim["publish_date"], utc=True).dt.tz_localize(None)
+    )
     fund_slim = fund_slim.dropna(subset=["publish_date"])
     fund_slim.drop_duplicates(["ticker", "publish_date"], keep="last", inplace=True)
 
@@ -655,10 +657,11 @@ def main() -> None:
     if args.refresh and args.source == "simfin":
         update_dataset(api_key=api_key)
     else:
-        if args.source == "simfin":
-            raw = download_simfin(api_key=api_key)
-        else:
-            raw = download_yfinance()
+        raw = (
+            download_simfin(api_key=api_key)
+            if args.source == "simfin"
+            else download_yfinance()
+        )
         df = build_dataset(raw)
         save_dataset(df)
 

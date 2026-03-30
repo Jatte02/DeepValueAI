@@ -6,8 +6,8 @@ import pytest
 
 from core.backtesting_engine import (
     BacktestResult,
-    Position,
     PortfolioState,
+    Position,
     _build_benchmark_curve,
     _check_entries,
     _check_exits,
@@ -15,19 +15,16 @@ from core.backtesting_engine import (
     _compute_portfolio_value,
 )
 from core.config import (
-    COOLDOWN_DAYS_PER_TICKER,
     MAX_HOLDING_DAYS,
     MAX_OPEN_POSITIONS,
     MAX_TICKER_EXPOSURE_PCT,
     PARTIAL_TP_SELL_FRACTION,
     PARTIAL_TP_TRIGGER_PCT,
     POSITION_SIZE_PCT,
-    SMA_BUY_CEILING,
     STOP_LOSS_PCT,
     TRAILING_STOP_ACTIVATION_PCT,
     TRAILING_STOP_PCT,
 )
-
 
 # ---------------------------------------------------------------------------
 # Position dataclass
@@ -422,11 +419,13 @@ class TestComputeMetrics:
             {"ticker": "AAPL", "action": "BUY", "date": pd.Timestamp("2023-01-03"),
              "price": 150.0, "shares": 33.0, "reason": "signal", "value": 5000, "return_pct": 0.0},
             {"ticker": "AAPL", "action": "SELL", "date": pd.Timestamp("2023-06-01"),
-             "price": 170.0, "shares": 33.0, "reason": "trailing_stop", "value": 5610, "return_pct": 0.133},
+             "price": 170.0, "shares": 33.0, "reason": "trailing_stop",
+             "value": 5610, "return_pct": 0.133},
             {"ticker": "MSFT", "action": "BUY", "date": pd.Timestamp("2023-02-01"),
              "price": 250.0, "shares": 20.0, "reason": "signal", "value": 5000, "return_pct": 0.0},
             {"ticker": "MSFT", "action": "SELL", "date": pd.Timestamp("2023-07-01"),
-             "price": 240.0, "shares": 20.0, "reason": "stop_loss", "value": 4800, "return_pct": -0.04},
+             "price": 240.0, "shares": 20.0, "reason": "stop_loss",
+             "value": 4800, "return_pct": -0.04},
         ])
 
     def test_returns_dict(self, simple_equity_and_benchmark, simple_trades):

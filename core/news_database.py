@@ -36,7 +36,6 @@ import re
 import time
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from core.config import PATHS, PROJECT_ROOT, setup_logging
@@ -209,7 +208,10 @@ def download_edgar_8k(
                             continue
 
                         # Build company name (strip ticker/CIK from display)
-                        company = display_names[0].split("(")[0].strip() if display_names else "Unknown"
+                        company = (
+                            display_names[0].split("(")[0].strip()
+                            if display_names else "Unknown"
+                        )
                         headline = _items_to_headline(company, items)
 
                         all_filings.append({

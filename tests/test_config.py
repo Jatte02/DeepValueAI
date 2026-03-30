@@ -7,7 +7,6 @@ from core.config import (
     DEFAULT_THRESHOLD,
     DOWNLOAD_INTERVAL,
     DOWNLOAD_PERIOD,
-    SCREENING_PERIOD,
     FEATURE_COLUMNS,
     FUNDAMENTAL_FEATURES,
     MACRO_FEATURES,
@@ -19,6 +18,7 @@ from core.config import (
     PATHS,
     POSITION_SIZE_PCT,
     PROJECT_ROOT,
+    SCREENING_PERIOD,
     SENTIMENT_FEATURES,
     SMA_BUY_CEILING,
     STOP_LOSS_PCT,
@@ -28,7 +28,6 @@ from core.config import (
     VIX_FEATURES,
     setup_logging,
 )
-
 
 # ---------------------------------------------------------------------------
 # Project root

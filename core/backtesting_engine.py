@@ -45,6 +45,7 @@ import pandas as pd
 
 from .config import (
     COOLDOWN_DAYS_PER_TICKER,
+    FEATURE_COLUMNS,
     MAX_HOLDING_DAYS,
     MAX_OPEN_POSITIONS,
     MAX_TICKER_EXPOSURE_PCT,
@@ -53,10 +54,8 @@ from .config import (
     PATHS,
     POSITION_SIZE_PCT,
     SMA_BUY_CEILING,
-    SMA_LENGTH,
     SP500_MARKET_TICKER,
     STOP_LOSS_PCT,
-    FEATURE_COLUMNS,
     TECHNICAL_FEATURES,
     TRAILING_STOP_ACTIVATION_PCT,
     TRAILING_STOP_PCT,
@@ -671,7 +670,7 @@ def _process_day(
         batch_df = pd.concat(batch_rows, ignore_index=False)
         try:
             probs = predict_proba(batch_df, model, feature_list=FEATURE_COLUMNS)
-            for ticker, prob in zip(batch_tickers, probs):
+            for ticker, prob in zip(batch_tickers, probs, strict=True):
                 probabilities[ticker] = float(prob)
         except (ValueError, Exception) as exc:
             # If batch prediction fails (e.g., unexpected NaN), fall
@@ -681,7 +680,7 @@ def _process_day(
                 "%s | Batch prediction failed, falling back to individual: %s",
                 date.date(), exc,
             )
-            for ticker, row_df in zip(batch_tickers, batch_rows):
+            for ticker, row_df in zip(batch_tickers, batch_rows, strict=True):
                 try:
                     prob = predict_proba(
                         row_df, model, feature_list=FEATURE_COLUMNS,

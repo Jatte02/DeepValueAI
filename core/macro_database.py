@@ -35,7 +35,6 @@ import logging
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from core.config import FRED_SERIES, PATHS, PROJECT_ROOT, setup_logging

@@ -112,7 +112,7 @@ def _show_key_metrics(m: dict):
     ]
 
     cols = st.columns(len(cards))
-    for col, (label, val, fmt) in zip(cols, cards):
+    for col, (label, val, fmt) in zip(cols, cards, strict=True):
         display = fmt.format(val) if val is not None else "N/A"
         col.metric(label, display)
 
@@ -286,7 +286,7 @@ def _show_all_metrics(metrics: dict):
         for tier_name, items in _METRIC_TIERS.items():
             st.markdown(f"**{tier_name}**")
             tier_cols = st.columns(len(items))
-            for col, (key, label, kind) in zip(tier_cols, items):
+            for col, (key, label, kind) in zip(tier_cols, items, strict=True):
                 val = metrics.get(key)
                 col.metric(label, _fmt_metric(val, kind))
             st.markdown("---")

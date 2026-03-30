@@ -6,7 +6,6 @@ import pytest
 
 from core.sentiment_pipeline import aggregate_daily_sentiment, merge_sentiment_pit
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
