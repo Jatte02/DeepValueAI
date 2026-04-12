@@ -1,0 +1,7 @@
+threshold,accuracy,precision,recall,f1,roc_auc,model,split,variant
+0.597907,0.5773,0.6258,0.2505,0.3578,0.6378,HistGradientBoosting,validation,unified_34feat
+0.597907,0.5469,0.6982,0.2591,0.3779,0.663,HistGradientBoosting,test,unified_34feat
+0.57036,0.5787,0.6307,0.25,0.3581,0.6399,RandomForest,validation,unified_34feat
+0.57036,0.5227,0.7007,0.1772,0.2829,0.6686,RandomForest,test,unified_34feat
+0.599494,0.5593,0.5712,0.25,0.3478,0.5555,LogisticRegression,validation,unified_34feat
+0.599494,0.5186,0.6256,0.2339,0.3405,0.5503,LogisticRegression,test,unified_34feat

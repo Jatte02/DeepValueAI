@@ -23,16 +23,13 @@ env/
 # ============================================================
 # Generated data
 # ============================================================
-# Training dataset is regenerated with: make dataset
-# Can be hundreds of MB. Does not belong in Git.
-data/
-
-# ============================================================
-# Trained models
-# ============================================================
-# ML artifacts are regenerated with: make train
-# .pkl files weigh tens of MB. Do not belong in Git.
-models/
+# Large raw files that can be regenerated are excluded.
+# Small Parquet feature files are tracked for Streamlit Cloud.
+data/training_dataset.csv
+data/drift_report.html
+data/test_drift.html
+data/ohlcv_cache/
+data/fundamentals/simfin_cache/
 
 # ============================================================
 # Claude Code (local configuration)
