@@ -10,11 +10,15 @@ Main entry point.  Sidebar navigation to three views:
 import sys
 from pathlib import Path
 
-# Ensure the project root is on sys.path so that `import core` works
-# even when Streamlit is launched with `cd app && streamlit run ...`.
+# Ensure BOTH the project root (for `import core`) and the app directory
+# (for `import page_*`) are on sys.path. This is needed because Streamlit
+# Cloud runs from the repo root, not from inside app/.
 _project_root = str(Path(__file__).resolve().parent.parent)
+_app_dir = str(Path(__file__).resolve().parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+if _app_dir not in sys.path:
+    sys.path.insert(0, _app_dir)
 
 import streamlit as st  # noqa: E402
 
